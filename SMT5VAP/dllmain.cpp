@@ -1,0 +1,63 @@
+#include <Mod/CppUserModBase.hpp>
+#include <DynamicOutput/DynamicOutput.hpp>
+#include <Unreal/World.hpp>
+#include "src/Log/Log.hpp"
+#include "src/Log/SMT5VAPLogDevice.hpp"
+#include "src/GameState.hpp"
+
+using namespace RC;
+using namespace RC::Unreal;
+
+class SMT5VAP : public RC::CppUserModBase
+{
+public:
+    SMT5VAP() : CppUserModBase()
+    {
+        ModName = STR("SMT5VAP");
+        ModVersion = STR("0.1");
+        ModDescription = STR("An Archipelago integration mod for Shin Megami Tensei V:Vengeance");
+        ModAuthors = STR("Poblin");
+    }
+
+    ~SMT5VAP() override
+    {
+    }
+
+    auto on_update() -> void override
+    {
+        GameState::Update();
+    }
+
+    auto on_unreal_init() -> void override
+    {
+        Output::set_default_devices<Output::SMT5VAPLogDevice>();
+        DEBUG("Mod initializing");
+
+        GameState::OnWorldChanged([](UWorld* World) {
+            if (World) LOG("World created");
+            else LOG("World destroyed");
+            });
+        GameState::OnMapChanged([](const std::wstring& MapName) {LOG("Map changed: {}", MapName);});
+        GameState::SetupSaveLoadedHook();
+        GameState::OnSaveLoaded([](bool isLoaded) {
+            if (isLoaded) LOG("Save loaded");
+            else LOG("Save unloaded");
+            });
+
+        LOG("Mod initialized");
+    }
+};
+
+#define SMT5VAP_MOD_API __declspec(dllexport)
+extern "C"
+{
+    SMT5VAP_MOD_API RC::CppUserModBase* start_mod()
+    {
+        return new SMT5VAP();
+    }
+
+    SMT5VAP_MOD_API void uninstall_mod(RC::CppUserModBase* mod)
+    {
+        delete mod;
+    }
+}
