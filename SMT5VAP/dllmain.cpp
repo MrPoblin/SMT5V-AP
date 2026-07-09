@@ -38,6 +38,13 @@ public:
         Output::set_default_devices<Output::SMT5VAPLogDevice>();
         DEBUG("Mod initializing");
 
+        // Hooks
+        PopupSuppression::Setup();
+        ChestHooks::Setup();
+        RelicHooks::Setup();
+        CustomPopups::Setup();
+
+        // Callbacks
         GameState::OnWorldChanged([](UWorld* World) {
             if (World) LOG("World created");
             else LOG("World destroyed");
@@ -48,14 +55,6 @@ public:
             if (isLoaded) LOG("Save loaded");
             else LOG("Save unloaded");
             });
-
-        // ── Register AP hooks ──
-        PopupSuppression::Setup();
-        ChestHooks::Setup();
-        RelicHooks::Setup();
-        CustomPopups::Setup();
-
-        // ── Log chest/open callbacks ──
         ChestHooks::OnChestOpened([](std::int32_t takaraSaveId) {
             LOG("[Chest] Opened: save ID={}", takaraSaveId);
             CustomPopups::ShowNotification(STR("Item received from Archipelago!"));
