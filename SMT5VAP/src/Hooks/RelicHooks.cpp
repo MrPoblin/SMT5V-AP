@@ -42,7 +42,9 @@ namespace RelicHooks {
 
                     if (flag && relicId >= 0) {
                         LOG("[Relic] Flag set: relic ID={}", relicId);
-                        PopupSuppression::SetBlockNextSpawn(true);
+                        if (PopupSuppression::IsBlockingRelics()) {
+                            PopupSuppression::SetBlockNextSpawn(true);
+                        }
 
                         std::lock_guard<std::mutex> lock(s_Mutex);
                         for (auto& cb : s_Callbacks) {
@@ -78,7 +80,9 @@ namespace RelicHooks {
 
                     if (flag && relicId >= 0) {
                         LOG("[Relic] Once-flag set: relic ID={}", relicId);
-                        PopupSuppression::SetBlockNextSpawn(true);
+                        if (PopupSuppression::IsBlockingRelics()) {
+                            PopupSuppression::SetBlockNextSpawn(true);
+                        }
 
                         std::lock_guard<std::mutex> lock(s_Mutex);
                         for (auto& cb : s_Callbacks) {

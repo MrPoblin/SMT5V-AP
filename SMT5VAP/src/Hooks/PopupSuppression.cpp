@@ -11,12 +11,19 @@ using namespace RC::Unreal;
 
 namespace PopupSuppression {
     static std::atomic<int32> s_BlockCount{0};
+    static std::atomic<bool> s_BlockChests{true};
+    static std::atomic<bool> s_BlockRelics{false};
 
     void SetBlockNextSpawn(bool block) {
         if (block) {
             s_BlockCount.fetch_add(1, std::memory_order_release);
         }
     }
+
+    void SetBlockChests(bool block) { s_BlockChests.store(block, std::memory_order_release); }
+    void SetBlockRelics(bool block) { s_BlockRelics.store(block, std::memory_order_release); }
+    bool IsBlockingChests() { return s_BlockChests.load(std::memory_order_acquire); }
+    bool IsBlockingRelics() { return s_BlockRelics.load(std::memory_order_acquire); }
 
     void Setup() {
         // ── Block BeginPlay on move/chest pieces ──
@@ -30,8 +37,9 @@ namespace PopupSuppression {
 
                 FName ClassName = Actor->GetClassPrivate()->GetNamePrivate();
                 if (ClassName == MovePieceClassName || ClassName == ChestPieceClassName) {
-                    DEBUG("[PopupSuppression] Blocked BeginPlay on {}", Actor->GetClassPrivate()->GetName());
+                    LOG("[PopupSuppression] Blocked BeginPlay on {}", Actor->GetClassPrivate()->GetName());
                     Data.PreventOriginalFunctionCall();
+                    s_BlockCount.fetch_sub(1, std::memory_order_release);
                 }
             },
             Hook::FCallbackOptions{

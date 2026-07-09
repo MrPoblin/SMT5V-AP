@@ -23,7 +23,7 @@ namespace ChestHooks {
             WARN("[ChestHooks] Failed to find SetTakaraFlag");
             return;
         }
-        DEBUG("[ChestHooks] Found SetTakaraFlag");
+        LOG("[ChestHooks] Found SetTakaraFlag");
 
         // Get param properties for logging
         FProperty* IdProp = Func->GetPropertyByName(STR("ID"));
@@ -46,8 +46,9 @@ namespace ChestHooks {
                 if (flag && chestId >= 0) {
                     LOG("[Chest] Flag set: chest save ID={}", chestId);
 
-                    // Signal PopupSuppression to block the next piece spawn
-                    PopupSuppression::SetBlockNextSpawn(true);
+                    if (PopupSuppression::IsBlockingChests()) {
+                        PopupSuppression::SetBlockNextSpawn(true);
+                    }
 
                     // Notify registered callbacks
                     std::lock_guard<std::mutex> lock(s_Mutex);
@@ -57,7 +58,7 @@ namespace ChestHooks {
                 }
             }
         );
-        DEBUG("[ChestHooks] SetTakaraFlag post-hook registered (id={})", s_SetTakaraFlagHookId);
+        LOG("[ChestHooks] SetTakaraFlag post-hook registered (id={})", s_SetTakaraFlagHookId);
     }
 
     void OnChestOpened(ChestOpenCallback cb) {

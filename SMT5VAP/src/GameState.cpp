@@ -39,8 +39,6 @@ void GameState::UpdateMapName() {
 
 void GameState::SetupSaveLoadedHook() {
 	const auto* Path = STR("/Script/Project.SaveLoadBase:StartDataLoad");
-	auto* Func = UObjectGlobals::FindObject<UFunction>(nullptr, Path);
-	DEBUG("Function found: {}", (Func ? L"YES" : L"NO"));
 	HookHelper::HookPostBool(Path, [](bool isLoaded) {
 		m_IsSaveLoaded = true;
 		for (auto& cb : m_SaveCbs) cb(true);
