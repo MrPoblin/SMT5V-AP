@@ -1,9 +1,13 @@
+#include <cstdint>
 #include <Mod/CppUserModBase.hpp>
 #include <DynamicOutput/DynamicOutput.hpp>
 #include <Unreal/World.hpp>
 #include "src/Log/Log.hpp"
 #include "src/Log/SMT5VAPLogDevice.hpp"
 #include "src/GameState.hpp"
+#include "src/Hooks/PopupSuppression.hpp"
+#include "src/Hooks/ChestHooks.hpp"
+#include "src/Hooks/RelicHooks.hpp"
 
 using namespace RC;
 using namespace RC::Unreal;
@@ -43,6 +47,19 @@ public:
             if (isLoaded) LOG("Save loaded");
             else LOG("Save unloaded");
             });
+
+        // ── Register AP hooks ──
+        PopupSuppression::Setup();
+        ChestHooks::Setup();
+        RelicHooks::Setup();
+
+        // ── Log chest/open callbacks ──
+        ChestHooks::OnChestOpened([](std::int32_t takaraSaveId) {
+            LOG("[Chest] Opened: save ID={}", takaraSaveId);
+        });
+        RelicHooks::OnRelicCollected([](std::int32_t relicId) {
+            LOG("[Relic] Collected: ID={}", relicId);
+        });
 
         LOG("Mod initialized");
     }
