@@ -55,6 +55,6 @@ namespace RC::Output
             break;
         }
 
-        m_file.write_string_to_file(m_formatter(formatted) + STR("\n"));
+        m_file.write_string_to_file(m_formatter(formatted));
     }
 }
