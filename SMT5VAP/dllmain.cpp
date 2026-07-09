@@ -8,6 +8,7 @@
 #include "src/Hooks/PopupSuppression.hpp"
 #include "src/Hooks/ChestHooks.hpp"
 #include "src/Hooks/RelicHooks.hpp"
+#include "src/Hooks/BattleHook.hpp"
 #include "src/CustomPopups.hpp"
 #include "src/Items/ItemLimits.hpp"
 #include "src/Items/ItemGet.hpp"
@@ -50,6 +51,8 @@ public:
         PopupSuppression::Setup();
         ChestHooks::Setup();
         RelicHooks::Setup();
+        BattleHook::Setup();
+        BattleHook::SetSuppressItems(true);
         CustomPopups::Setup();
         GameState::SetupSaveLoadedHook();
 
@@ -78,6 +81,9 @@ public:
         RelicHooks::OnRelicCollected([](std::int32_t relicId) {
             LOG("[Relic] Collected: ID={}", relicId);
             CustomPopups::ShowNotification(STR("Item received from Archipelago!"));
+        });
+        BattleHook::OnVictory([](int32_t encounterId, int32_t eventEncounterId, bool isBoss) {
+            LOG("[BattleHook] Callback: enc={}, evtEnc={}, boss={}", encounterId, eventEncounterId, isBoss);
         });
 
         LOG("Mod initialized");
