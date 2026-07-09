@@ -8,6 +8,7 @@
 #include "src/Hooks/PopupSuppression.hpp"
 #include "src/Hooks/ChestHooks.hpp"
 #include "src/Hooks/RelicHooks.hpp"
+#include "src/CustomPopups.hpp"
 
 using namespace RC;
 using namespace RC::Unreal;
@@ -52,13 +53,16 @@ public:
         PopupSuppression::Setup();
         ChestHooks::Setup();
         RelicHooks::Setup();
+        CustomPopups::Setup();
 
         // ── Log chest/open callbacks ──
         ChestHooks::OnChestOpened([](std::int32_t takaraSaveId) {
             LOG("[Chest] Opened: save ID={}", takaraSaveId);
+            CustomPopups::ShowNotification(STR("Item received from Archipelago!"));
         });
         RelicHooks::OnRelicCollected([](std::int32_t relicId) {
             LOG("[Relic] Collected: ID={}", relicId);
+            CustomPopups::ShowNotification(STR("Item received from Archipelago!"));
         });
 
         LOG("Mod initialized");

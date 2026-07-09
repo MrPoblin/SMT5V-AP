@@ -53,7 +53,7 @@ namespace RelicHooks {
                     }
                 }
             );
-            DEBUG("[RelicHooks] SetRelicFlag post-hook registered (id={})", s_SetRelicFlagHookId);
+            LOG("[RelicHooks] SetRelicFlag post-hook registered (id={})", s_SetRelicFlagHookId);
         }
 
         // ── Hook SetRelicOnceFlag (one-time relics) ──
@@ -91,7 +91,7 @@ namespace RelicHooks {
                     }
                 }
             );
-            DEBUG("[RelicHooks] SetRelicOnceFlag post-hook registered (id={})", s_SetRelicOnceFlagHookId);
+            LOG("[RelicHooks] SetRelicOnceFlag post-hook registered (id={})", s_SetRelicOnceFlagHookId);
         }
     }
 
