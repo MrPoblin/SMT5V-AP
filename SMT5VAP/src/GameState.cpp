@@ -14,7 +14,6 @@ void GameState::Update() {
 	if (UpdateWorld()) UpdateMapName();
 }
 
-
 bool GameState::UpdateWorld() {
 	UWorld* newWorld = static_cast<UWorld*>(UObjectGlobals::FindFirstOf(STR("World")));
 	if ((m_World == nullptr) != (newWorld == nullptr)) {

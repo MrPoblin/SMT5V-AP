@@ -9,6 +9,9 @@
 #include "src/Hooks/ChestHooks.hpp"
 #include "src/Hooks/RelicHooks.hpp"
 #include "src/CustomPopups.hpp"
+#include "src/Items/ItemLimits.hpp"
+#include "src/Items/ItemGet.hpp"
+#include <Windows.h>
 
 using namespace RC;
 using namespace RC::Unreal;
@@ -31,6 +34,11 @@ public:
     auto on_update() -> void override
     {
         GameState::Update();
+
+        if (GetAsyncKeyState(VK_F4) & 1) {
+            GiveItem(1, 1);
+            DEBUG("Sent item ID 1");
+        }
     }
 
     auto on_unreal_init() -> void override
@@ -43,6 +51,8 @@ public:
         ChestHooks::Setup();
         RelicHooks::Setup();
         CustomPopups::Setup();
+        GameState::SetupSaveLoadedHook();
+
 
         // Callbacks
         GameState::OnWorldChanged([](UWorld* World) {
@@ -50,9 +60,15 @@ public:
             else LOG("World destroyed");
             });
         GameState::OnMapChanged([](const std::wstring& MapName) {LOG("Map changed: {}", MapName);});
-        GameState::SetupSaveLoadedHook();
         GameState::OnSaveLoaded([](bool isLoaded) {
-            if (isLoaded) LOG("Save loaded");
+            if (isLoaded) {
+                LOG("Save loaded");
+                static bool afterSaveInitialized{ false };
+                if (!afterSaveInitialized) {
+                    ItemLimits::Raise(255);
+                    afterSaveInitialized = true;
+                }
+            }
             else LOG("Save unloaded");
             });
         ChestHooks::OnChestOpened([](std::int32_t takaraSaveId) {
