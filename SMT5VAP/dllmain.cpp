@@ -16,6 +16,7 @@
 #include "src/Hooks/MissionHooks.hpp"
 #include "src/Hooks/AogamiHooks.hpp"
 #include "src/Hooks/DevilStatueHooks.hpp"
+#include "src/Hooks/NaviDevilHooks.hpp"
 #include "src/CustomPopups.hpp"
 #include "src/Items/ItemLimits.hpp"
 #include "src/Items/ItemGet.hpp"
@@ -117,6 +118,7 @@ public:
         AogamiHooks::SetReplaceItemId(0);  // 0 = give nothing (AP will handle the replacement)
 
         DevilStatueHooks::Setup();
+        NaviDevilHooks::Setup();
 
         MissionHooks::Setup();
 
@@ -145,37 +147,39 @@ public:
 
         //Callback tests
         ChestHooks::OnChestOpened([](std::int32_t takaraSaveId) {
-            LOG("[Chest] Opened: save ID={}", takaraSaveId);
-            CustomPopups::ShowNotification(STR("Item received from Archipelago!"));
+            ;
         });
 
         RelicHooks::OnRelicCollected([](std::int32_t relicId) {
-            LOG("[Relic] Collected: ID={}", relicId);
-            CustomPopups::ShowNotification(STR("Item received from Archipelago!"));
+            ;
         });
 
         BattleHook::OnVictory([](int32_t encounterId, int32_t eventEncounterId, bool isBoss) {
-            LOG("[BattleHook] Callback: enc={}, evtEnc={}, boss={}", encounterId, eventEncounterId, isBoss);
+            ;
         });
 
         GloryHooks::OnGloryCollected([](std::int32_t gloryAmount) {
-            LOG("[Glory] Collected: Amalgam Amount={}", gloryAmount);
+            ;
         });
 
         MimanHooks::OnMimanFound([](std::int32_t mimanId) {
-            LOG("[Miman] Found callback: ID={}", mimanId);
+            ;
         });
 
         MimanRewardHooks::OnMimanRewardClaimed([](std::int32_t rewardId) {
-            LOG("[MimanReward] Claimed callback: ID={}", rewardId);
+            ;
         });
 
         AogamiHooks::OnAogamiDebrisCollected([](std::int32_t tableIndex) {
-            LOG("[Aogami] Debris collected callback: tableIndex={}", tableIndex);
+            ;
         });
 
         DevilStatueHooks::OnDevilStatueCollected([](const RC::Unreal::FName& flagName) {
-            LOG("[DevilStatue] Collected: {}", flagName.ToString());
+            ;
+        });
+
+        NaviDevilHooks::OnNaviGimmickCollected([](std::int32_t saveId) {
+            ;
         });
 
         LOG("Mod initialized");
