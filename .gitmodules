@@ -1,6 +1,6 @@
 [submodule "RE-UE4SS-SMT5V"]
 	path = RE-UE4SS-SMT5V
-	url = git@github.com:MrPoblin/RE-UE4SS-SMT5V.git
+	url = https://github.com/MrPoblin/RE-UE4SS-SMT5V.git
 [submodule "SMT5VAP/External/APCpp"]
 	path = SMT5VAP/External/APCpp
-	url = git@github.com:MrPoblin/APCpp.git
+	url = https://github.com/MrPoblin/APCpp.git
