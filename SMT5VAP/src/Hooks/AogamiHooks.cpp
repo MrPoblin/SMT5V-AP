@@ -1,4 +1,5 @@
 #include "AogamiHooks.hpp"
+#include "PopupSuppression.hpp"
 #include "src/Log/Log.hpp"
 #include "src/HookHelper.hpp"
 #include <Unreal/UObjectGlobals.hpp>
@@ -42,6 +43,11 @@ namespace AogamiHooks {
 
                 if (flag && tableIndex >= 0) {
                     LOG("[Aogami] Debris collected: tableIndex={}", tableIndex);
+
+                    if (PopupSuppression::IsBlockingAogamiDebris()) {
+                        PopupSuppression::SetBlockNextSpawn(true);
+                    }
+
                     std::lock_guard<std::mutex> lock(s_Mutex);
                     for (auto& cb : s_Callbacks) {
                         cb(tableIndex);

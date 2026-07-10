@@ -11,8 +11,9 @@ using namespace RC::Unreal;
 
 namespace PopupSuppression {
     static std::atomic<int32> s_BlockCount{0};
-    static std::atomic<bool> s_BlockChests{true};
+    static std::atomic<bool> s_BlockChests{false};
     static std::atomic<bool> s_BlockRelics{false};
+    static std::atomic<bool> s_BlockAogamiDebris{false};
 
     void SetBlockNextSpawn(bool block) {
         if (block) {
@@ -22,8 +23,10 @@ namespace PopupSuppression {
 
     void SetBlockChests(bool block) { s_BlockChests.store(block, std::memory_order_release); }
     void SetBlockRelics(bool block) { s_BlockRelics.store(block, std::memory_order_release); }
+    void SetBlockAogamiDebris(bool block) { s_BlockAogamiDebris.store(block, std::memory_order_release); }
     bool IsBlockingChests() { return s_BlockChests.load(std::memory_order_acquire); }
     bool IsBlockingRelics() { return s_BlockRelics.load(std::memory_order_acquire); }
+    bool IsBlockingAogamiDebris() { return s_BlockAogamiDebris.load(std::memory_order_acquire); }
 
     void Setup() {
         // ── Block BeginPlay on move/chest pieces ──

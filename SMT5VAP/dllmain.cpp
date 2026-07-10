@@ -100,7 +100,8 @@ public:
 
         PopupSuppression::Setup();
         PopupSuppression::SetBlockChests(true);
-        PopupSuppression::SetBlockRelics(true);
+        PopupSuppression::SetBlockRelics(false);
+        PopupSuppression::SetBlockAogamiDebris(true);
 
         BattleHook::Setup();
         BattleHook::SetSuppressItems(false);
