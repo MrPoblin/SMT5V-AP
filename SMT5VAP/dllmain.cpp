@@ -94,17 +94,26 @@ public:
         DEBUG("Mod initializing{}");
 
         // Hooks
-        PopupSuppression::Setup();
         ChestHooks::Setup();
         RelicHooks::Setup();
+
+        PopupSuppression::Setup();
+        PopupSuppression::SetBlockChests(true);
+        PopupSuppression::SetBlockRelics(true);
+
         BattleHook::Setup();
         BattleHook::SetSuppressItems(false);
+
         GloryHooks::Setup();
         GloryHooks::SetBlockGlory(true);
+
         MimanHooks::Setup();
         MimanRewardHooks::Setup();
+
         MissionHooks::Setup();
+
         CustomPopups::Setup();
+
         GameState::SetupSaveLoadedHook();
 
 
@@ -130,19 +139,24 @@ public:
             LOG("[Chest] Opened: save ID={}", takaraSaveId);
             CustomPopups::ShowNotification(STR("Item received from Archipelago!"));
         });
+
         RelicHooks::OnRelicCollected([](std::int32_t relicId) {
             LOG("[Relic] Collected: ID={}", relicId);
             CustomPopups::ShowNotification(STR("Item received from Archipelago!"));
         });
+
         BattleHook::OnVictory([](int32_t encounterId, int32_t eventEncounterId, bool isBoss) {
             LOG("[BattleHook] Callback: enc={}, evtEnc={}, boss={}", encounterId, eventEncounterId, isBoss);
         });
+
         GloryHooks::OnGloryCollected([](std::int32_t gloryAmount) {
             LOG("[Glory] Collected: Amalgam Amount={}", gloryAmount);
         });
+
         MimanHooks::OnMimanFound([](std::int32_t mimanId) {
             LOG("[Miman] Found callback: ID={}", mimanId);
         });
+
         MimanRewardHooks::OnMimanRewardClaimed([](std::int32_t rewardId) {
             LOG("[MimanReward] Claimed callback: ID={}", rewardId);
         });
