@@ -98,7 +98,7 @@ public:
         ChestHooks::Setup();
         RelicHooks::Setup();
 
-        PopupSuppression::Setup();
+        //PopupSuppression::Setup();
         PopupSuppression::SetBlockChests(true);
         PopupSuppression::SetBlockRelics(false);
         PopupSuppression::SetBlockAogamiDebris(true);
@@ -113,6 +113,7 @@ public:
         MimanRewardHooks::Setup();
 
         AogamiHooks::Setup();
+        AogamiHooks::SetReplaceItemId(0);  // 0 = give nothing (AP will handle the replacement)
 
         MissionHooks::Setup();
 
