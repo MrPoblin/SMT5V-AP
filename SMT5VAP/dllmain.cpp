@@ -9,7 +9,10 @@
 #include "src/Hooks/PopupSuppression.hpp"
 #include "src/Hooks/ChestHooks.hpp"
 #include "src/Hooks/RelicHooks.hpp"
+#include "src/Hooks/GloryHooks.hpp"
 #include "src/Hooks/BattleHook.hpp"
+#include "src/Hooks/MimanHooks.hpp"
+#include "src/Hooks/MimanRewardHooks.hpp"
 #include "src/CustomPopups.hpp"
 #include "src/Items/ItemLimits.hpp"
 #include "src/Items/ItemGet.hpp"
@@ -87,6 +90,9 @@ public:
         RelicHooks::Setup();
         BattleHook::Setup();
         BattleHook::SetSuppressItems(false);
+        GloryHooks::Setup();
+        MimanHooks::Setup();
+        MimanRewardHooks::Setup();
         CustomPopups::Setup();
         GameState::SetupSaveLoadedHook();
 
@@ -118,6 +124,15 @@ public:
         });
         BattleHook::OnVictory([](int32_t encounterId, int32_t eventEncounterId, bool isBoss) {
             LOG("[BattleHook] Callback: enc={}, evtEnc={}, boss={}", encounterId, eventEncounterId, isBoss);
+        });
+        GloryHooks::OnGloryCollected([](std::int32_t pieceId, std::int32_t gloryAmount) {
+            LOG("[Glory] Collected: piece ID={}, Amount={}", pieceId, gloryAmount);
+        });
+        MimanHooks::OnMimanFound([](std::int32_t mimanId) {
+            LOG("[Miman] Found callback: ID={}", mimanId);
+        });
+        MimanRewardHooks::OnMimanRewardClaimed([](std::int32_t rewardId) {
+            LOG("[MimanReward] Claimed callback: ID={}", rewardId);
         });
 
         LOG("Mod initialized");
