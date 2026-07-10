@@ -80,13 +80,6 @@ public:
     {
         Output::set_default_devices<Output::SMT5VAPLogDevice>();
         DEBUG("Mod initializing{}");
-        //std::thread([]() {
-        //    std::string cmd;
-        //    while (std::getline(std::cin, cmd)) {
-        //        std::wstring_convert<std::codecvt_utf8<wchar_t>> conv;
-        //        DEBUG("{}", conv.from_bytes(cmd).c_str());
-        //    }
-        //    }).detach();
 
         // Hooks
         PopupSuppression::Setup();
