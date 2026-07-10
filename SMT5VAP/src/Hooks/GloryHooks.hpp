@@ -3,8 +3,10 @@
 #include <functional>
 
 namespace GloryHooks {
-    // Fired for both glory (gloryAmount != 0, pieceId == -1) and piece pickups.
-    using GloryCollectCallback = std::function<void(std::int32_t pieceId, std::int32_t gloryAmount)>;
+    // Fired when AddGodParameterPoint is called with a blocked value.
+    using GloryCollectCallback = std::function<void(std::int32_t gloryAmount)>;
     void Setup();
     void OnGloryCollected(GloryCollectCallback cb);
+    // When true, AddGodParameterPoint value is zeroed (glory blocked for AP replacement)
+    void SetBlockGlory(bool block);
 }

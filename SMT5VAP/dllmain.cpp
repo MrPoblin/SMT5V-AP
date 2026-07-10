@@ -73,9 +73,12 @@ public:
     {
         GameState::Update();
         AP::CheckAPConnection();
+
+        // For Debugging
         if (GetAsyncKeyState(VK_F4) & 1) {
-            GiveItem(1, 1);
-            DEBUG("Sent item ID 1");
+            ItemGet::GiveItem(110, 1);
+            ItemGet::GiveItem(109, 1);
+            DEBUG("Sent debug items");
         }
     }
 
@@ -91,6 +94,7 @@ public:
         BattleHook::Setup();
         BattleHook::SetSuppressItems(false);
         GloryHooks::Setup();
+        GloryHooks::SetBlockGlory(true);
         MimanHooks::Setup();
         MimanRewardHooks::Setup();
         CustomPopups::Setup();
@@ -125,8 +129,8 @@ public:
         BattleHook::OnVictory([](int32_t encounterId, int32_t eventEncounterId, bool isBoss) {
             LOG("[BattleHook] Callback: enc={}, evtEnc={}, boss={}", encounterId, eventEncounterId, isBoss);
         });
-        GloryHooks::OnGloryCollected([](std::int32_t pieceId, std::int32_t gloryAmount) {
-            LOG("[Glory] Collected: piece ID={}, Amount={}", pieceId, gloryAmount);
+        GloryHooks::OnGloryCollected([](std::int32_t gloryAmount) {
+            LOG("[Glory] Collected: Amalgam Amount={}", gloryAmount);
         });
         MimanHooks::OnMimanFound([](std::int32_t mimanId) {
             LOG("[Miman] Found callback: ID={}", mimanId);
