@@ -80,6 +80,11 @@ public:
             ItemGet::GiveItem(109, 1);
             DEBUG("Sent debug items");
         }
+        if (GetAsyncKeyState(VK_F5) & 1) {
+            ItemGet::GiveGlory(1);
+            ItemGet::GiveMacca(1);
+            DEBUG("Sent debug stuff");
+        }
     }
 
     auto on_unreal_init() -> void override
@@ -118,6 +123,7 @@ public:
             }
             else LOG("Save unloaded");
             });
+        //Callback tests
         ChestHooks::OnChestOpened([](std::int32_t takaraSaveId) {
             LOG("[Chest] Opened: save ID={}", takaraSaveId);
             CustomPopups::ShowNotification(STR("Item received from Archipelago!"));
