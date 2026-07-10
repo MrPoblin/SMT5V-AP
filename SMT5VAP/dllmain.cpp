@@ -15,6 +15,7 @@
 #include "src/Hooks/MimanRewardHooks.hpp"
 #include "src/Hooks/MissionHooks.hpp"
 #include "src/Hooks/AogamiHooks.hpp"
+#include "src/Hooks/DevilStatueHooks.hpp"
 #include "src/CustomPopups.hpp"
 #include "src/Items/ItemLimits.hpp"
 #include "src/Items/ItemGet.hpp"
@@ -115,6 +116,8 @@ public:
         AogamiHooks::Setup();
         AogamiHooks::SetReplaceItemId(0);  // 0 = give nothing (AP will handle the replacement)
 
+        DevilStatueHooks::Setup();
+
         MissionHooks::Setup();
 
         CustomPopups::Setup();
@@ -139,6 +142,7 @@ public:
             }
             else LOG("Save unloaded");
             });
+
         //Callback tests
         ChestHooks::OnChestOpened([](std::int32_t takaraSaveId) {
             LOG("[Chest] Opened: save ID={}", takaraSaveId);
@@ -168,7 +172,10 @@ public:
 
         AogamiHooks::OnAogamiDebrisCollected([](std::int32_t tableIndex) {
             LOG("[Aogami] Debris collected callback: tableIndex={}", tableIndex);
-            CustomPopups::ShowNotification(STR("Aogami Husk collected!"));
+        });
+
+        DevilStatueHooks::OnDevilStatueCollected([](const RC::Unreal::FName& flagName) {
+            LOG("[DevilStatue] Collected: {}", flagName.ToString());
         });
 
         LOG("Mod initialized");
