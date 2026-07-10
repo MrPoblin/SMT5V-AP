@@ -14,7 +14,6 @@ using namespace RC::Unreal;
 namespace MissionHooks {
     static std::vector<MissionCallback> s_Callbacks;
     static std::mutex s_Mutex;
-    static std::atomic<bool> s_BlockReward{false};
 
     static UFunction* FindFunc(std::initializer_list<const wchar_t*> paths) {
         for (auto* p : paths) {
@@ -53,10 +52,5 @@ namespace MissionHooks {
     void OnMissionCompleted(MissionCallback cb) {
         std::lock_guard<std::mutex> lock(s_Mutex);
         s_Callbacks.push_back(std::move(cb));
-    }
-
-    void SetBlockMissionReward(bool block) {
-        s_BlockReward = block;
-        LOG("[MissionHooks] SetBlockMissionReward({})", block);
     }
 }
