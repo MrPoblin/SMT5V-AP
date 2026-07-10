@@ -2,6 +2,7 @@
 #include <Mod/CppUserModBase.hpp>
 #include <DynamicOutput/DynamicOutput.hpp>
 #include <Unreal/World.hpp>
+#include "Archipelago.h"
 #include "src/Log/Log.hpp"
 #include "src/Log/SMT5VAPLogDevice.hpp"
 #include "src/GameState.hpp"
@@ -12,13 +13,21 @@
 #include "src/CustomPopups.hpp"
 #include "src/Items/ItemLimits.hpp"
 #include "src/Items/ItemGet.hpp"
+#include "src/Archipelago/APManager.hpp"
+#include <UE4SSProgram.hpp>
 #include <Windows.h>
+#include <format>
 
 using namespace RC;
 using namespace RC::Unreal;
 
 class SMT5VAP : public RC::CppUserModBase
 {
+private:
+    char m_inputIP[256]{};
+    char m_inputSlotName[256]{};
+    char m_inputPassword[256]{""};
+
 public:
     SMT5VAP() : CppUserModBase()
     {
@@ -26,16 +35,41 @@ public:
         ModVersion = STR("0.1");
         ModDescription = STR("An Archipelago integration mod for Shin Megami Tensei V:Vengeance");
         ModAuthors = STR("Poblin");
+
+        register_tab(STR("Archipelago"), [](CppUserModBase* instance) {
+            auto mod = dynamic_cast<SMT5VAP*>(instance);
+            if (!mod) return;
+
+            ImGui::InputText("Address and port", mod->m_inputIP, IM_ARRAYSIZE(mod->m_inputIP));
+            ImGui::InputText("Slot Name (Player)", mod->m_inputSlotName, IM_ARRAYSIZE(mod->m_inputSlotName));
+            ImGui::InputText("Password", mod->m_inputPassword, IM_ARRAYSIZE(mod->m_inputPassword));
+
+            if (ImGui::Button("Connect"))
+            {
+                AP::APInitialize(mod->m_inputIP, mod->m_inputSlotName, mod->m_inputPassword);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Disconnect"))
+            {
+                AP::Shutdown();
+            }
+            ImGui::Text(std::format("AP Status: {}", AP::getAPConnectedStatus()).c_str());
+            });
     }
 
     ~SMT5VAP() override
     {
     }
 
+    auto on_ui_init() -> void override
+    {
+        UE4SS_ENABLE_IMGUI()
+    }
+
     auto on_update() -> void override
     {
         GameState::Update();
-
+        AP::CheckAPConnection();
         if (GetAsyncKeyState(VK_F4) & 1) {
             GiveItem(1, 1);
             DEBUG("Sent item ID 1");
@@ -45,14 +79,21 @@ public:
     auto on_unreal_init() -> void override
     {
         Output::set_default_devices<Output::SMT5VAPLogDevice>();
-        DEBUG("Mod initializing");
+        DEBUG("Mod initializing{}");
+        //std::thread([]() {
+        //    std::string cmd;
+        //    while (std::getline(std::cin, cmd)) {
+        //        std::wstring_convert<std::codecvt_utf8<wchar_t>> conv;
+        //        DEBUG("{}", conv.from_bytes(cmd).c_str());
+        //    }
+        //    }).detach();
 
         // Hooks
         PopupSuppression::Setup();
         ChestHooks::Setup();
         RelicHooks::Setup();
         BattleHook::Setup();
-        BattleHook::SetSuppressItems(true);
+        BattleHook::SetSuppressItems(false);
         CustomPopups::Setup();
         GameState::SetupSaveLoadedHook();
 
