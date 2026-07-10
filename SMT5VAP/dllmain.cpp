@@ -14,6 +14,7 @@
 #include "src/Hooks/MimanHooks.hpp"
 #include "src/Hooks/MimanRewardHooks.hpp"
 #include "src/Hooks/MissionHooks.hpp"
+#include "src/Hooks/AogamiHooks.hpp"
 #include "src/CustomPopups.hpp"
 #include "src/Items/ItemLimits.hpp"
 #include "src/Items/ItemGet.hpp"
@@ -110,6 +111,8 @@ public:
         MimanHooks::Setup();
         MimanRewardHooks::Setup();
 
+        AogamiHooks::Setup();
+
         MissionHooks::Setup();
 
         CustomPopups::Setup();
@@ -159,6 +162,11 @@ public:
 
         MimanRewardHooks::OnMimanRewardClaimed([](std::int32_t rewardId) {
             LOG("[MimanReward] Claimed callback: ID={}", rewardId);
+        });
+
+        AogamiHooks::OnAogamiDebrisCollected([](std::int32_t tableIndex) {
+            LOG("[Aogami] Debris collected callback: tableIndex={}", tableIndex);
+            CustomPopups::ShowNotification(STR("Aogami Husk collected!"));
         });
 
         LOG("Mod initialized");
