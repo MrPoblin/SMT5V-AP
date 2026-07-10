@@ -13,6 +13,7 @@
 #include "src/Hooks/BattleHook.hpp"
 #include "src/Hooks/MimanHooks.hpp"
 #include "src/Hooks/MimanRewardHooks.hpp"
+#include "src/Hooks/MissionHooks.hpp"
 #include "src/CustomPopups.hpp"
 #include "src/Items/ItemLimits.hpp"
 #include "src/Items/ItemGet.hpp"
@@ -102,6 +103,7 @@ public:
         GloryHooks::SetBlockGlory(true);
         MimanHooks::Setup();
         MimanRewardHooks::Setup();
+        MissionHooks::Setup();
         CustomPopups::Setup();
         GameState::SetupSaveLoadedHook();
 
