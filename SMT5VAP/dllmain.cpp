@@ -17,6 +17,7 @@
 #include "src/Hooks/AogamiHooks.hpp"
 #include "src/Hooks/DevilStatueHooks.hpp"
 #include "src/Hooks/NaviDevilHooks.hpp"
+#include "src/Hooks/GardenHauntHooks.hpp"
 #include "src/CustomPopups.hpp"
 #include "src/Items/ItemLimits.hpp"
 #include "src/Items/ItemGet.hpp"
@@ -98,7 +99,7 @@ public:
         DEBUG("Mod initializing{}");
 
         ItemBlocker::Setup();
-        ItemBlocker::SetBlockAll(true);
+        ItemBlocker::SetBlockAll(false);
 
         // Hooks
         ChestHooks::Setup();
@@ -130,6 +131,8 @@ public:
         NaviDevilHooks::SetBlockItems(true);      // false = passthrough (no changes)
         NaviDevilHooks::SetReplaceMacca(1);       // 0 = suppress, >0 = give N macca instead
 
+
+        GardenHauntHooks::Setup();
 
         MissionHooks::Setup();
 
@@ -191,6 +194,14 @@ public:
         });
 
         NaviDevilHooks::OnNaviGimmickCollected([](std::int32_t saveId) {
+            ;
+        });
+
+        GardenHauntHooks::OnGardenGift([](std::int32_t devilLevel, std::int32_t chosenItemId, std::int32_t chosenItemNum) {
+            ;
+        });
+
+        GardenHauntHooks::OnGardenPowerUp([](std::int32_t nkmIndex) {
             ;
         });
 
