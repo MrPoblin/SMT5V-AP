@@ -115,10 +115,13 @@ public:
         MimanRewardHooks::Setup();
 
         AogamiHooks::Setup();
-        AogamiHooks::SetReplaceItemId(0);  // 0 = give nothing (AP will handle the replacement)
+        AogamiHooks::SetReplaceItemId(0); 
 
         DevilStatueHooks::Setup();
-        NaviDevilHooks::Setup();
+
+        //NaviDevilHooks::SetupUniqueSaveID();
+        NaviDevilHooks::SetupAddCheckCounter();
+        NaviDevilHooks::SetupSetGimmickExistFiltered();
 
         MissionHooks::Setup();
 
@@ -138,6 +141,7 @@ public:
                 LOG("Save loaded");
                 static bool afterSaveInitialized{ false };
                 if (!afterSaveInitialized) {
+                    // Still need to do this on new game started as well
                     ItemLimits::Raise(255);
                     afterSaveInitialized = true;
                 }
