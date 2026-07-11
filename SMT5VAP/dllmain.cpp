@@ -18,6 +18,7 @@
 #include "src/Hooks/DevilStatueHooks.hpp"
 #include "src/Hooks/NaviDevilHooks.hpp"
 #include "src/Hooks/GardenHauntHooks.hpp"
+#include "src/Hooks/SaveHooks.hpp"
 #include "src/CustomPopups.hpp"
 #include "src/Items/ItemLimits.hpp"
 #include "src/Items/ItemGet.hpp"
@@ -128,11 +129,13 @@ public:
         NaviDevilHooks::SetupAddCheckCounter();
         NaviDevilHooks::SetupSetGimmickExistFiltered();
         NaviDevilHooks::SetupBlockItems();
-        NaviDevilHooks::SetBlockItems(true);      // false = passthrough (no changes)
-        NaviDevilHooks::SetReplaceMacca(1);       // 0 = suppress, >0 = give N macca instead
+        NaviDevilHooks::SetBlockItems(true); 
+        NaviDevilHooks::SetReplaceMacca(1); 
 
 
         GardenHauntHooks::Setup();
+
+        SaveHooks::Setup();
 
         MissionHooks::Setup();
 
@@ -202,6 +205,10 @@ public:
         });
 
         GardenHauntHooks::OnGardenPowerUp([](std::int32_t nkmIndex) {
+            ;
+        });
+
+        SaveHooks::OnGameSaved([](int32_t slotIndex, bool isInherit) {
             ;
         });
 
