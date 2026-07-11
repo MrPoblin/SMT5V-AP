@@ -20,4 +20,11 @@ namespace NaviDevilHooks {
     void SetupAddCheckCounter();        // post-hook, sets trigger flag
     void SetupSetGimmickExistFiltered(); // pre-hook, only fires when trigger is active
 
+    // Item replacement: post-hooks GetNaviDevilGimmickData/FromID
+    // SetBlockItems(false) to disable entirely (passthrough)
+    // SetReplaceMacca(0) to suppress (give nothing)
+    // SetReplaceMacca(N) to replace with N macca
+    void SetupBlockItems();
+    void SetBlockItems(bool block);
+    void SetReplaceMacca(std::int32_t amount);
 }

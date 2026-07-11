@@ -122,6 +122,9 @@ public:
         //NaviDevilHooks::SetupUniqueSaveID();
         NaviDevilHooks::SetupAddCheckCounter();
         NaviDevilHooks::SetupSetGimmickExistFiltered();
+        NaviDevilHooks::SetupBlockItems();
+        NaviDevilHooks::SetBlockItems(true);      // false = passthrough (no changes)
+        NaviDevilHooks::SetReplaceMacca(1);       // 0 = suppress, >0 = give N macca instead
 
         MissionHooks::Setup();
 

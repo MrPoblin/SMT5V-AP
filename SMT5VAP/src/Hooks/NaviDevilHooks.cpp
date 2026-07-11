@@ -111,6 +111,92 @@ namespace NaviDevilHooks {
         }
     }
 
+    // ── Item replacement: modify m_ItemInfo from GetNaviDevilGimmickData return values ──
+    // FNaviDevilGimmickData layout (size 0x50):
+    //   +0x00 int32 m_MapID
+    //   +0x04 int32 m_Index
+    //   +0x08 int32 m_ExcavateType
+    //   ...
+    //   +0x40 TArray<FNaviDevilGimmickItemData> m_ItemInfo
+    //     TArray: +0x00 Data*, +0x08 int32 Count, +0x0C int32 Max
+    // FNaviDevilGimmickItemData layout (size 0x18):
+    //   +0x00 bool m_IsItem
+    //   +0x01 bool m_IsMakka
+    //   +0x04 int32 m_ItemID
+    //   +0x08 int32 m_Num
+    //   +0x0C int32 m_RandomNum
+    //   +0x10 int32 m_Rate
+    //   +0x14 int32 m_OnFlag
+    static constexpr int32 ITEM_INFO_OFFSET = 0x40;
+    static constexpr int32 ARRAY_DATA_OFFSET = 0x00;
+    static constexpr int32 ARRAY_COUNT_OFFSET = 0x08;
+    static constexpr int32 ITEM_ENTRY_SIZE = 0x18;
+    static constexpr int32 M_IS_ITEM_OFFSET = 0x00;
+    static constexpr int32 M_IS_MAKKA_OFFSET = 0x01;
+    static constexpr int32 M_ITEM_ID_OFFSET = 0x04;
+    static constexpr int32 M_NUM_OFFSET = 0x08;
+
+    static std::atomic<bool> s_BlockItems{true};
+    static std::atomic<int32> s_ReplaceMaccaAmount{0}; // 0 = suppress, >0 = macca amount
+
+    void SetBlockItems(bool block) {
+        s_BlockItems.store(block, std::memory_order_release);
+        LOG("[NaviDevil] SetBlockItems({})", block);
+    }
+
+    void SetReplaceMacca(int32_t amount) {
+        s_ReplaceMaccaAmount.store(amount, std::memory_order_release);
+        LOG("[NaviDevil] SetReplaceMacca({})", amount);
+    }
+
+    static void registerItemReplaceHook(const wchar_t* FuncPath) {
+        auto* Fn = UObjectGlobals::FindObject<UFunction>(nullptr, FuncPath);
+        if (!Fn) {
+            WARN("[NaviDevil] Failed to find item replace target: {}", FuncPath);
+            return;
+        }
+        LOG("[NaviDevil] Found item replace target: {}", FuncPath);
+        Fn->RegisterPostHook([](UnrealScriptFunctionCallableContext& Ctx, void*) {
+            static bool s_Logged = false;
+            if (!s_BlockItems.load(std::memory_order_acquire)) return;
+            if (auto* Result = static_cast<uint8*>(Ctx.RESULT_DECL)) {
+                auto* CountPtr = reinterpret_cast<int32*>(Result + ITEM_INFO_OFFSET + ARRAY_COUNT_OFFSET);
+                int32 count = *CountPtr;
+                if (count <= 0) return;
+
+                int32 maccaAmount = s_ReplaceMaccaAmount.load(std::memory_order_acquire);
+                if (!s_Logged) {
+                    if (maccaAmount == 0) {
+                        LOG("[NaviDevil] Item replacement active: suppressing all gimmick items");
+                    } else {
+                        LOG("[NaviDevil] Item replacement active: giving {} macca per gimmick entry", maccaAmount);
+                    }
+                    s_Logged = true;
+                }
+                if (maccaAmount == 0) {
+                    *CountPtr = 0;
+                } else {
+                    auto* DataPtr = *reinterpret_cast<void**>(Result + ITEM_INFO_OFFSET + ARRAY_DATA_OFFSET);
+                    if (!DataPtr) return;
+                    for (int32 i = 0; i < count; ++i) {
+                        auto* Entry = static_cast<uint8*>(DataPtr) + i * ITEM_ENTRY_SIZE;
+                        *reinterpret_cast<bool*>(Entry + M_IS_ITEM_OFFSET) = false;
+                        *reinterpret_cast<bool*>(Entry + M_IS_MAKKA_OFFSET) = true;
+                        *reinterpret_cast<int32*>(Entry + M_ITEM_ID_OFFSET) = 0;
+                        *reinterpret_cast<int32*>(Entry + M_NUM_OFFSET) = maccaAmount;
+                    }
+                }
+            }
+        });
+    }
+
+    void SetupBlockItems() {
+        LOG("[NaviDevil] SetupBlockItems...");
+        registerItemReplaceHook(STR("/Script/Project.BPL_NaviDevilData:GetNaviDevilGimmickData"));
+        registerItemReplaceHook(STR("/Script/Project.BPL_NaviDevilData:GetNaviDevilGimmickData_FromID"));
+        LOG("[NaviDevil] SetupBlockItems complete");
+    }
+
     void OnNaviGimmickCollected(NaviGimmickCollectedCallback cb) {
         std::lock_guard<std::mutex> lock(s_Mutex);
         s_Callbacks.push_back(std::move(cb));
