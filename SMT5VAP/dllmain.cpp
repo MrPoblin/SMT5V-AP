@@ -20,6 +20,7 @@
 #include "src/CustomPopups.hpp"
 #include "src/Items/ItemLimits.hpp"
 #include "src/Items/ItemGet.hpp"
+#include "src/Items/ItemBlocker.hpp"
 #include "src/Archipelago/APManager.hpp"
 #include <UE4SSProgram.hpp>
 #include <Windows.h>
@@ -96,17 +97,20 @@ public:
         Output::set_default_devices<Output::SMT5VAPLogDevice>();
         DEBUG("Mod initializing{}");
 
+        ItemBlocker::Setup();
+        ItemBlocker::SetBlockAll(true);
+
         // Hooks
         ChestHooks::Setup();
         RelicHooks::Setup();
 
-        //PopupSuppression::Setup();
+        PopupSuppression::Setup();
         PopupSuppression::SetBlockChests(true);
-        PopupSuppression::SetBlockRelics(false);
+        PopupSuppression::SetBlockRelics(true);
         PopupSuppression::SetBlockAogamiDebris(true);
 
         BattleHook::Setup();
-        BattleHook::SetSuppressItems(false);
+        BattleHook::SetSuppressItems(true);
 
         GloryHooks::Setup();
         GloryHooks::SetBlockGlory(true);
@@ -125,6 +129,7 @@ public:
         NaviDevilHooks::SetupBlockItems();
         NaviDevilHooks::SetBlockItems(true);      // false = passthrough (no changes)
         NaviDevilHooks::SetReplaceMacca(1);       // 0 = suppress, >0 = give N macca instead
+
 
         MissionHooks::Setup();
 

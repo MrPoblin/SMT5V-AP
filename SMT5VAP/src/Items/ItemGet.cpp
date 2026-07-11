@@ -1,4 +1,5 @@
 #include "ItemGet.hpp"
+#include "ItemBlocker.hpp"
 #include "src/Log/Log.hpp"
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/UFunctionStructs.hpp>
@@ -27,7 +28,8 @@ namespace ItemGet {
     void GiveItem(int32_t itemId, int32_t count) {
         s_ItemGet.Init();
         if (!s_ItemGet.Func || !s_ItemGet.CDO) return;
-
+        //Bypass item blocker
+        ItemBlocker::BypassGuard guard;
         struct { int32 ID; int32 Num; } params{itemId, count};
         s_ItemGet.CDO->ProcessEvent(s_ItemGet.Func, &params);
     }
