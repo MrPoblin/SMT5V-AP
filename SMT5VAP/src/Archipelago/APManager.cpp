@@ -9,7 +9,7 @@
 #include <Windows.h>
 
 namespace AP {
-	char GameName[]{ "Shin Megami Tensei V: Vengeance" };
+	constexpr char GameName[]{ "Shin Megami Tensei V: Vengeance" };
 
     static std::mutex ItemQueueMutex;
     static std::queue<int64_t> ItemQueue;

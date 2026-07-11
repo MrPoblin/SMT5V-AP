@@ -48,7 +48,7 @@ public:
             auto mod = dynamic_cast<SMT5VAP*>(instance);
             if (!mod) return;
 
-            ImGui::InputText("Address and port", mod->m_inputIP, IM_ARRAYSIZE(mod->m_inputIP));
+            ImGui::InputText("Address and Port", mod->m_inputIP, IM_ARRAYSIZE(mod->m_inputIP));
             ImGui::InputText("Slot Name (Player)", mod->m_inputSlotName, IM_ARRAYSIZE(mod->m_inputSlotName));
             ImGui::InputText("Password", mod->m_inputPassword, IM_ARRAYSIZE(mod->m_inputPassword));
 
