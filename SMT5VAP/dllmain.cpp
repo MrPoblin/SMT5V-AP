@@ -19,6 +19,7 @@
 #include "src/Hooks/NaviDevilHooks.hpp"
 #include "src/Hooks/GardenHauntHooks.hpp"
 #include "src/Hooks/SaveHooks.hpp"
+#include "src/Tick/CompendiumTick.hpp"
 #include "src/CustomPopups.hpp"
 #include "src/Items/ItemLimits.hpp"
 #include "src/Items/ItemGet.hpp"
@@ -80,6 +81,9 @@ public:
     {
         GameState::Update();
         AP::CheckAPConnection();
+        if (GameState::IsSaveLoaded()) {
+            CompendiumTick::Poll();
+        }
 
         // For Debugging
         if (GetAsyncKeyState(VK_F4) & 1) {
@@ -99,10 +103,10 @@ public:
         Output::set_default_devices<Output::SMT5VAPLogDevice>();
         DEBUG("Mod initializing{}");
 
+        // Hooks
         ItemBlocker::Setup();
         ItemBlocker::SetBlockAll(false);
 
-        // Hooks
         ChestHooks::Setup();
         RelicHooks::Setup();
 
@@ -131,7 +135,6 @@ public:
         NaviDevilHooks::SetupBlockItems();
         NaviDevilHooks::SetBlockItems(true); 
         NaviDevilHooks::SetReplaceMacca(1); 
-
 
         GardenHauntHooks::Setup();
 
@@ -209,6 +212,10 @@ public:
         });
 
         SaveHooks::OnGameSaved([](int32_t slotIndex, bool isInherit) {
+            ;
+        });
+
+        CompendiumTick::OnDemonAcquired([](int32_t devilID) {
             ;
         });
 
