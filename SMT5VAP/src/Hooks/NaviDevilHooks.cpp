@@ -3,6 +3,7 @@
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/UFunctionStructs.hpp>
 #include <Unreal/CoreUObject/UObject/UnrealType.hpp>
+#include <Unreal/CoreUObject/UObject/Class.hpp>
 #include <vector>
 #include <mutex>
 #include <atomic>
@@ -14,8 +15,11 @@ namespace NaviDevilHooks {
     static std::vector<NaviGimmickCollectedCallback> s_Callbacks;
     static std::mutex s_Mutex;
 
-    // Shared trigger flag: set by AddCheckCounter, consumed by SetGimmickExistFiltered
-    static std::atomic<bool> s_PendingPickup{false};
+    // Navigator change detection
+    static std::vector<NaviDevilChangedCallback> s_ChangedCallbacks;
+    static std::mutex s_ChangedMutex;
+    static UObject* s_NaviCDO = nullptr;
+    static UFunction* s_GetNaviIDFn = nullptr;
 
     static UFunction* FindFunc(std::initializer_list<const wchar_t*> paths) {
         for (auto* p : paths) {
@@ -32,6 +36,71 @@ namespace NaviDevilHooks {
         }
         return nullptr;
     }
+
+    // Find a CDO by class name, trying multiple naming patterns
+    static UObject* FindNaviCDO(const wchar_t* className) {
+        StringType path = StringType(STR("/Script/Project.Default__")) + className;
+        auto* Obj = UObjectGlobals::StaticFindObject_InternalSlow(nullptr, nullptr, path.c_str());
+        if (Obj) return Obj;
+        path = StringType(STR("/Script/Project.Default__")) + className + STR("_C");
+        Obj = UObjectGlobals::StaticFindObject_InternalSlow(nullptr, nullptr, path.c_str());
+        if (Obj) return Obj;
+        StringType classPath = StringType(STR("/Script/Project.")) + className;
+        auto* Cls = UObjectGlobals::FindObject<UClass>(nullptr, classPath.c_str());
+        if (!Cls) {
+            classPath += STR("_C");
+            Cls = UObjectGlobals::FindObject<UClass>(nullptr, classPath.c_str());
+        }
+        if (Cls) return Cls->CreateDefaultObject();
+        return nullptr;
+    }
+
+    void SetupNaviDevilChanged() {
+        LOG("[NaviDevil] SetupNaviDevilChanged...");
+
+        auto* F = FindFunc({
+            STR("/Script/Project.BPL_MapData:SetCurrentNaviDevil"),
+            STR("/Script/Project.BPL_MapData_C:SetCurrentNaviDevil"),
+        });
+        if (!F) {
+            WARN("[NaviDevil] SetCurrentNaviDevil NOT FOUND");
+            return;
+        }
+
+        // Cache CDO for calling GetCurrentNaviDevilID
+        s_NaviCDO = FindNaviCDO(STR("BPL_MapData"));
+        s_GetNaviIDFn = FindFunc({
+            STR("/Script/Project.BPL_MapData:GetCurrentNaviDevilID"),
+            STR("/Script/Project.BPL_MapData_C:GetCurrentNaviDevilID"),
+        });
+
+        if (!s_NaviCDO) WARN("[NaviDevil] BPL_MapData CDO NOT FOUND");
+        if (!s_GetNaviIDFn) WARN("[NaviDevil] GetCurrentNaviDevilID NOT FOUND");
+
+        F->RegisterPostHook([](UnrealScriptFunctionCallableContext& Ctx, void*) {
+            if (!s_NaviCDO || !s_GetNaviIDFn) return;
+
+            struct { int32 ReturnValue; } Params{};
+            s_NaviCDO->ProcessEvent(s_GetNaviIDFn, &Params);
+
+            int32 devilID = Params.ReturnValue;
+            if (devilID > 0) {
+                LOG("[NaviDevil] Navigator changed: DevilID={}", devilID);
+                std::lock_guard<std::mutex> lock(s_ChangedMutex);
+                for (auto& cb : s_ChangedCallbacks) cb(devilID);
+            }
+        });
+
+        LOG("[NaviDevil] SetupNaviDevilChanged OK");
+    }
+
+    void OnNaviDevilChanged(NaviDevilChangedCallback cb) {
+        std::lock_guard<std::mutex> lock(s_ChangedMutex);
+        s_ChangedCallbacks.push_back(std::move(cb));
+    }
+
+    // Shared trigger flag: set by AddCheckCounter, consumed by SetGimmickExistFiltered
+    static std::atomic<bool> s_PendingPickup{false};
 
     // ── SetNaviDevilGimmickUniqueSaveID (post-hook, fires on unique gimmick save) ──
     void SetupUniqueSaveID() {

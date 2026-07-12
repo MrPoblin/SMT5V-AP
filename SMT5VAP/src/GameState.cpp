@@ -13,7 +13,7 @@ using namespace RC::Unreal;
 void GameState::Update() {
 	if (UpdateWorld()) {
 		UpdateMapName();
-		UpdatePosition();
+		//UpdatePosition(); Need to fix
 	}
 }
 

@@ -4,10 +4,15 @@
 
 namespace NaviDevilHooks {
     using NaviGimmickCollectedCallback = std::function<void(std::int32_t saveId)>;
+    using NaviDevilChangedCallback = std::function<void(std::int32_t devilID)>;
 
     // Fires on some spots collected
     void SetupUniqueSaveID();
     void OnNaviGimmickCollected(NaviGimmickCollectedCallback cb);
+
+    // Fires when the navigator demon changes (provides the new navigator's DevilID)
+    void SetupNaviDevilChanged();
+    void OnNaviDevilChanged(NaviDevilChangedCallback cb);
 
     // Hybrid: uses AddCheckCounter as trigger + filtered SetGimmickExist for IDs
     // Only fires when both fire on the same frame (eliminates map-load spam)

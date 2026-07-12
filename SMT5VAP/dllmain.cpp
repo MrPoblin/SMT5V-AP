@@ -149,6 +149,7 @@ public:
         NaviDevilHooks::SetupBlockItems();
         NaviDevilHooks::SetBlockItems(true); 
         NaviDevilHooks::SetReplaceMacca(1); 
+        NaviDevilHooks::SetupNaviDevilChanged();
 
         GardenHauntHooks::Setup();
         GardenHauntHooks::SetSuppressGifts(true);
@@ -222,6 +223,10 @@ public:
         });
 
         NaviDevilHooks::OnNaviGimmickCollected([](std::int32_t saveId) {
+            ;
+        });
+
+        NaviDevilHooks::OnNaviDevilChanged([](std::int32_t devilID) {
             ;
         });
 
