@@ -125,7 +125,8 @@ public:
         PopupSuppression::SetBlockAogamiDebris(true);
 
         BattleHook::Setup();
-        BattleHook::SetSuppressItems(true);
+        BattleHook::SetSuppressItems(false);
+        BattleHook::SetSuppressMitamaItems(false);
 
         GloryHooks::Setup();
         GloryHooks::SetBlockGlory(true);

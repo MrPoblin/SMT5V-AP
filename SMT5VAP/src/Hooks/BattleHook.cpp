@@ -3,6 +3,7 @@
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/UFunctionStructs.hpp>
 #include <Unreal/CoreUObject/UObject/UnrealType.hpp>
+#include <Unreal/CoreUObject/UObject/Class.hpp>
 #include <Unreal/UObject.hpp>
 #include <Unreal/Core/Containers/ScriptArray.hpp>
 #include <vector>
@@ -15,6 +16,7 @@ namespace BattleHook {
 
 static CallbackId s_PreHookId{-1};
 static bool s_SuppressItems{false};
+static bool s_SuppressMitamaItems{false};
 static std::vector<VictoryCallback> s_Callbacks;
 static std::mutex s_Mutex;
 
@@ -83,6 +85,72 @@ static void suppressItems(UObject* resultComp) {
     LOG("[BattleHook] Suppressed {} item(s)", count);
 }
 
+// ── Mitama detection ──
+// E_GROUP_ID::E_GROUP_ID_MITAMA == 16; FDevilBaseData::m_Group is at offset 8.
+static constexpr uint8 kMitamaGroup = 16;
+
+static UFunction* s_GetDevilBaseDataFunc{nullptr};
+static UObject* s_DevilDataCDO{nullptr};
+static bool s_DevilDataInitFailed{false};
+
+static void InitDevilData() {
+    if (s_GetDevilBaseDataFunc || s_DevilDataInitFailed) return;
+    s_GetDevilBaseDataFunc = UObjectGlobals::FindObject<UFunction>(nullptr,
+        STR("/Script/Project.BPL_DevilData:GetDevilBaseData"));
+    if (!s_GetDevilBaseDataFunc)
+        s_GetDevilBaseDataFunc = UObjectGlobals::FindObject<UFunction>(nullptr,
+            STR("/Script/Project.BPL_DevilData_C:GetDevilBaseData"));
+    if (!s_GetDevilBaseDataFunc) {
+        WARN("[BattleHook] BPL_DevilData::GetDevilBaseData not found");
+        s_DevilDataInitFailed = true;
+        return;
+    }
+    s_DevilDataCDO = UObjectGlobals::StaticFindObject_InternalSlow(nullptr, nullptr,
+        STR("/Script/Project.Default__BPL_DevilData"));
+    if (!s_DevilDataCDO)
+        s_DevilDataCDO = UObjectGlobals::StaticFindObject_InternalSlow(nullptr, nullptr,
+            STR("/Script/Project.Default__BPL_DevilData_C"));
+    if (!s_DevilDataCDO) {
+        auto* cls = UObjectGlobals::FindObject<UClass>(nullptr, STR("/Script/Project.BPL_DevilData"));
+        if (!cls) cls = UObjectGlobals::FindObject<UClass>(nullptr, STR("/Script/Project.BPL_DevilData_C"));
+        if (cls) s_DevilDataCDO = cls->CreateDefaultObject();
+    }
+    if (!s_DevilDataCDO) {
+        WARN("[BattleHook] BPL_DevilData CDO not found");
+        s_DevilDataInitFailed = true;
+    }
+}
+
+// Returns the enemy's group ID via BPL_DevilData::GetDevilBaseData(devilID).
+static uint8 GetDevilGroup(int32 devilId) {
+    InitDevilData();
+    if (!s_GetDevilBaseDataFunc || !s_DevilDataCDO) return 0;
+    auto* retProp = s_GetDevilBaseDataFunc->GetPropertyByName(STR("ReturnValue"));
+    if (!retProp) return 0;
+    // ID (int32) at 0, then FDevilBaseData return value. Buffer sized generously.
+    std::vector<uint8> params(0x800, 0);
+    *reinterpret_cast<int32*>(params.data()) = devilId;
+    s_DevilDataCDO->ProcessEvent(s_GetDevilBaseDataFunc, params.data());
+    uint8* structPtr = retProp->ContainerPtrToValuePtr<uint8>(params.data());
+    return structPtr[8]; // m_Group at offset 8 within FDevilBaseData
+}
+
+// True if any enemy in the encounter belongs to the Mitama group.
+static bool IsMitamaBattle(UObject* outer) {
+    if (!outer) return false;
+    uint8* bm = reinterpret_cast<uint8*>(outer);
+    FScriptArray* enemyIDs = reinterpret_cast<FScriptArray*>(bm + kEncountDataOffset + kEnemyIDArrayOffset);
+    if (!enemyIDs || enemyIDs->Num() <= 0) return false;
+    int32* ids = static_cast<int32*>(enemyIDs->GetData());
+    for (int32 i = 0; i < enemyIDs->Num(); i++) {
+        if (ids[i] != 0 && GetDevilGroup(ids[i]) == kMitamaGroup) {
+            LOG("[BattleHook] Mitama battle detected (demon ID={})", ids[i]);
+            return true;
+        }
+    }
+    return false;
+}
+
 void Setup() {
     if (s_PreHookId != -1) return;
 
@@ -132,6 +200,11 @@ void Setup() {
 
             // Suppress items BEFORE SetResultData processes the data
             if (s_SuppressItems) {
+                suppressItems(resultComp);
+            }
+
+            // Mitama-only suppression
+            if (s_SuppressMitamaItems && IsMitamaBattle(outer)) {
                 suppressItems(resultComp);
             }
         }
@@ -199,6 +272,15 @@ void SetSuppressItems(bool suppress) {
         LOG("[BattleHook] Item suppression ENABLED");
     } else {
         LOG("[BattleHook] Item suppression DISABLED");
+    }
+}
+
+void SetSuppressMitamaItems(bool suppress) {
+    s_SuppressMitamaItems = suppress;
+    if (suppress) {
+        LOG("[BattleHook] Mitama item suppression ENABLED");
+    } else {
+        LOG("[BattleHook] Mitama item suppression DISABLED");
     }
 }
 

@@ -12,4 +12,9 @@ void OnVictory(VictoryCallback cb);
 void OnAllyDowned(AllyDownedCallback cb);
 void SetSuppressItems(bool suppress);
 
+// Suppress ONLY items granted by Mitama battles (enemy group == MITAMA).
+// The grant is handled by the shared result-data suppression, so multiple
+// items per battle are covered.
+void SetSuppressMitamaItems(bool suppress);
+
 }
