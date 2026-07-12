@@ -4,6 +4,7 @@
 #include <Unreal/UObject.hpp>
 #include <Unreal/UFunctionStructs.hpp>
 #include <Unreal/CoreUObject/UObject/Class.hpp>
+#include <Unreal/Hooks/CallbackIterationData.hpp>
 #include <vector>
 
 using namespace RC;
@@ -52,7 +53,7 @@ static void TriggerGameOverNow() {
     LOG("[Death] SetNextStep(GAMEOVER) called");
 }
 
-static void OnEngineTickPre(UEngine*, float) {
+static void OnEngineTickPre(Hook::TCallbackIterationData<void>&, UEngine*, float, bool) {
     if (s_PendingKill) {
         s_PendingKill = false;
         TriggerGameOverNow();
@@ -63,7 +64,7 @@ void Setup() {
     static bool registered = false;
     if (registered) return;
     registered = true;
-    Hook::RegisterEngineTickPreCallback(OnEngineTickPre);
+    Hook::RegisterEngineTickPreCallback(OnEngineTickPre, Hook::FCallbackOptions{});
 }
 
 bool KillLocalPlayer() {    
@@ -71,5 +72,4 @@ bool KillLocalPlayer() {
     LOG("[Death] game-over requested");
     return true;
 }
-
 }
