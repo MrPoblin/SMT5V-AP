@@ -14,9 +14,6 @@ using LevelUpCallback = std::function<void(int32_t oldLevel, int32_t newLevel)>;
 // independent).
 void Poll();
 
-// Set the poll interval in seconds (framerate independent throttle). Default 1.0.
-void SetPollInterval(double seconds);
-
 // Subscribe to protagonist level-up events.
 void OnLevelUp(LevelUpCallback cb);
 
