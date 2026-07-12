@@ -24,6 +24,7 @@
 #include "src/Items/ItemLimits.hpp"
 #include "src/Items/ItemGet.hpp"
 #include "src/Items/ItemBlocker.hpp"
+#include "src/Functions/DeathFunctions.hpp"
 #include "src/Archipelago/APManager.hpp"
 #include <UE4SSProgram.hpp>
 #include <Windows.h>
@@ -96,6 +97,10 @@ public:
             ItemGet::GiveMacca(1);
             DEBUG("Sent debug stuff");
         }
+        if (GetAsyncKeyState(VK_F6) & 1 && GameState::IsSaveLoaded()) {
+            DeathFunctions::KillLocalPlayer();
+            DEBUG("Manual death trigger");
+        }
     }
 
     auto on_unreal_init() -> void override
@@ -143,6 +148,8 @@ public:
         MissionHooks::Setup();
 
         CustomPopups::Setup();
+
+        DeathFunctions::Setup();
 
         GameState::SetupSaveLoadedHook();
 
