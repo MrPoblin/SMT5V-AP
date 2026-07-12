@@ -26,6 +26,7 @@
 #include "src/Items/ItemLimits.hpp"
 #include "src/Items/ItemGet.hpp"
 #include "src/Items/ItemBlocker.hpp"
+#include "src/Items/MaccaBlocker.hpp"
 #include "src/Functions/DeathFunctions.hpp"
 #include "src/Archipelago/APManager.hpp"
 #include "src/Archipelago/APState.hpp"
@@ -131,6 +132,9 @@ public:
 
         ItemBlocker::Setup();
         ItemBlocker::SetBlockAll(false);
+
+        MaccaBlocker::Setup();
+        MaccaBlocker::SetBlockMacca(false);
 
         ChestHooks::Setup();
         RelicHooks::Setup();

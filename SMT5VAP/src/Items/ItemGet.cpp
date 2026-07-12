@@ -1,5 +1,6 @@
 #include "ItemGet.hpp"
 #include "ItemBlocker.hpp"
+#include "MaccaBlocker.hpp"
 #include "src/Log/Log.hpp"
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/UFunctionStructs.hpp>
@@ -109,6 +110,7 @@ namespace ItemGet {
         s_Macca.Init();
         if (!s_Macca.Func || !s_Macca.CDO) return;
 
+        MaccaBlocker::BypassGuard guard;
         struct { int32 Makka; } params{amount};
         s_Macca.CDO->ProcessEvent(s_Macca.Func, &params);
     }
