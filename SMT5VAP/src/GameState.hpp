@@ -26,6 +26,13 @@ public:
 	static void Update();
 
 	static void SetupSaveLoadedHook();
+
+	// Position tracking
+	static float PosX() { return m_PosX; }
+	static float PosY() { return m_PosY; }
+	static float PosZ() { return m_PosZ; }
+	static void UpdatePosition();
+
 private:
 	inline static UWorld* m_World{};
 	inline static std::wstring m_MapName{};
@@ -34,6 +41,10 @@ private:
 	inline static std::vector<WorldCallback> m_WorldCbs;
 	inline static std::vector<MapCallback>   m_MapCbs;
 	inline static std::vector<SaveCallback>  m_SaveCbs;
+
+	inline static float m_PosX{};
+	inline static float m_PosY{};
+	inline static float m_PosZ{};
 
 	static bool UpdateWorld();
 	static void UpdateMapName();

@@ -89,6 +89,10 @@ public:
         }
 
         // For Debugging
+        if (GetAsyncKeyState(VK_F3) & 1) {
+            DEBUG("Debug Coordinates:");
+            DEBUG("X: {}, Y: {}, Z: {}", GameState::PosX(), GameState::PosY(), GameState::PosZ());
+        }
         if (GetAsyncKeyState(VK_F4) & 1) {
             ItemGet::GiveItem(110, 1);
             ItemGet::GiveItem(109, 1);
