@@ -3,6 +3,7 @@
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/UFunctionStructs.hpp>
 #include <Unreal/CoreUObject/UObject/UnrealType.hpp>
+#include <Unreal/UObject.hpp>
 #include <Unreal/Core/Containers/ScriptArray.hpp>
 #include <vector>
 #include <mutex>
@@ -16,6 +17,30 @@ static CallbackId s_PreHookId{-1};
 static bool s_SuppressItems{false};
 static std::vector<VictoryCallback> s_Callbacks;
 static std::mutex s_Mutex;
+
+static CallbackId s_HPHookId{-1};
+static std::vector<AllyDownedCallback> s_DownCallbacks;
+static std::mutex s_DownMutex;
+static UFunction* s_GetHeroIndexFunc{nullptr};
+
+// Resolves the protagonist's current party index via the C++ base class
+// UFunction GetHeroIndex(). Returns -1 if it could not be resolved.
+static int32 ResolveHeroIndex(UObject* comp) {
+    if (!comp) return -1;
+    if (!s_GetHeroIndexFunc) {
+        s_GetHeroIndexFunc = UObjectGlobals::FindObject<UFunction>(nullptr,
+            STR("/Script/Project.BattlePartySystemComponentBase:GetHeroIndex"));
+        if (!s_GetHeroIndexFunc) {
+            WARN("[BattleHook] Could not find GetHeroIndex");
+            return -1;
+        }
+        LOG("[BattleHook] Found GetHeroIndex");
+    }
+    struct FGetHeroIndexParams { int32 ReturnValue; };
+    FGetHeroIndexParams params{};
+    comp->ProcessEvent(s_GetHeroIndexFunc, &params);
+    return params.ReturnValue;
+}
 
 // UBattleResult_C: m_ResultData at +0x0130
 //   FBtlResultData:
@@ -112,11 +137,60 @@ void Setup() {
         }
     );
     LOG("[BattleHook] SetResultData pre-hook registered (id={})", s_PreHookId);
+
+    // ── Player-down detection ──
+    // Hook SetHPMP on the C++ base class BattlePartySystemComponentBase.
+    // Fires when a party member's HP is set to 0 (downed/dead). The caller
+    // is responsible for deciding what counts as a death (e.g. hero only).
+    auto* HPFunc = UObjectGlobals::FindObject<UFunction>(nullptr,
+        STR("/Script/Project.BattlePartySystemComponentBase:SetHPMP"));
+    if (!HPFunc) {
+        WARN("[BattleHook] Could not find SetHPMP");
+    } else {
+        LOG("[BattleHook] Found SetHPMP");
+        FProperty* PartyIndexProp = HPFunc->GetPropertyByName(STR("partyIndex"));
+        FProperty* InValueProp = HPFunc->GetPropertyByName(STR("InValue"));
+        FProperty* IsHPProp = HPFunc->GetPropertyByName(STR("isHP"));
+
+        s_HPHookId = HPFunc->RegisterPostHook(
+            [PartyIndexProp, InValueProp, IsHPProp](UnrealScriptFunctionCallableContext& Ctx, void*) {
+                int32 partyIndex = -1;
+                int32 inValue = 0;
+                bool isHP = false;
+                if (PartyIndexProp) {
+                    if (auto* P = PartyIndexProp->ContainerPtrToValuePtr<int32>(Ctx.TheStack.Locals()))
+                        partyIndex = *P;
+                }
+                if (InValueProp) {
+                    if (auto* P = InValueProp->ContainerPtrToValuePtr<int32>(Ctx.TheStack.Locals()))
+                        inValue = *P;
+                }
+                if (IsHPProp) {
+                    if (auto* P = IsHPProp->ContainerPtrToValuePtr<bool>(Ctx.TheStack.Locals()))
+                        isHP = *P;
+                }
+
+                // Only react to HP changes, and only when HP reaches 0.
+                if (isHP && inValue <= 0 && partyIndex >= 0) {
+                    int32 heroIndex = ResolveHeroIndex(Ctx.Context);
+                    LOG("[BattleHook] Party member downed - partyIndex={}, HP={}, heroIndex={}", partyIndex, inValue, heroIndex);
+                    std::lock_guard<std::mutex> lock(s_DownMutex);
+                    for (auto& cb : s_DownCallbacks) cb(partyIndex, inValue, heroIndex);
+                }
+            }
+        );
+        LOG("[BattleHook] SetHPMP post-hook registered (id={})", s_HPHookId);
+    }
 }
 
 void OnVictory(VictoryCallback cb) {
     std::lock_guard<std::mutex> lock(s_Mutex);
     s_Callbacks.push_back(std::move(cb));
+}
+
+void OnAllyDowned(AllyDownedCallback cb) {
+    std::lock_guard<std::mutex> lock(s_DownMutex);
+    s_DownCallbacks.push_back(std::move(cb));
 }
 
 void SetSuppressItems(bool suppress) {

@@ -179,6 +179,10 @@ public:
             ;
         });
 
+        BattleHook::OnAllyDowned([](int32_t partyIndex, int32_t newHP, int32_t heroIndex) {
+            ;
+        });
+
         GloryHooks::OnGloryCollected([](std::int32_t gloryAmount) {
             ;
         });
