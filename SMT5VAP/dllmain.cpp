@@ -19,6 +19,7 @@
 #include "src/Hooks/NaviDevilHooks.hpp"
 #include "src/Hooks/GardenHauntHooks.hpp"
 #include "src/Hooks/SaveHooks.hpp"
+#include "src/Tick/LevelUpTick.hpp"
 #include "src/Tick/CompendiumTick.hpp"
 #include "src/CustomPopups.hpp"
 #include "src/Items/ItemLimits.hpp"
@@ -84,12 +85,15 @@ public:
         AP::CheckAPConnection();
         if (GameState::IsSaveLoaded()) {
             CompendiumTick::Poll();
+            LevelUpTick::Poll();
         }
 
         // For Debugging
         if (GetAsyncKeyState(VK_F4) & 1) {
             ItemGet::GiveItem(110, 1);
             ItemGet::GiveItem(109, 1);
+            ItemGet::GiveItem(82, 1);
+            ItemGet::GiveItem(83, 1);
             DEBUG("Sent debug items");
         }
         if (GetAsyncKeyState(VK_F5) & 1) {
@@ -161,6 +165,7 @@ public:
             });
         GameState::OnMapChanged([](const std::wstring& MapName) {LOG("Map changed: {}", MapName);});
         GameState::OnSaveLoaded([](bool isLoaded) {
+            LevelUpTick::Reset();
             if (isLoaded) {
                 LOG("Save loaded");
                 static bool afterSaveInitialized{ false };
@@ -223,6 +228,10 @@ public:
         });
 
         SaveHooks::OnGameSaved([](int32_t slotIndex, bool isInherit) {
+            ;
+        });
+
+        LevelUpTick::OnLevelUp([](int32_t oldLevel, int32_t newLevel) {
             ;
         });
 
