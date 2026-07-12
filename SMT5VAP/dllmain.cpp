@@ -19,6 +19,7 @@
 #include "src/Hooks/NaviDevilHooks.hpp"
 #include "src/Hooks/GardenHauntHooks.hpp"
 #include "src/Hooks/SaveHooks.hpp"
+#include "src/Hooks/EssenceShopHooks.hpp"
 #include "src/Tick/LevelUpTick.hpp"
 #include "src/Tick/CompendiumTick.hpp"
 #include "src/CustomPopups.hpp"
@@ -27,6 +28,7 @@
 #include "src/Items/ItemBlocker.hpp"
 #include "src/Functions/DeathFunctions.hpp"
 #include "src/Archipelago/APManager.hpp"
+#include "src/Archipelago/APState.hpp"
 #include <UE4SSProgram.hpp>
 #include <Windows.h>
 #include <format>
@@ -89,6 +91,10 @@ public:
         }
 
         // For Debugging
+        if (GetAsyncKeyState(VK_F2) & 1) {
+            DEBUG("Add essence to shop");
+            EssenceShopHooks::AddItemToShop(545);
+        }
         if (GetAsyncKeyState(VK_F3) & 1) {
             DEBUG("Debug Coordinates:");
             DEBUG("X: {}, Y: {}, Z: {}", GameState::PosX(), GameState::PosY(), GameState::PosZ());
@@ -116,7 +122,13 @@ public:
         Output::set_default_devices<Output::SMT5VAPLogDevice>();
         DEBUG("Mod initializing{}");
 
+        // Debug
+        APState::AddEssence(544);
+        APState::AddEssence(528);
+
         // Hooks
+        GameState::SetupSaveLoadedHook();
+
         ItemBlocker::Setup();
         ItemBlocker::SetBlockAll(false);
 
@@ -162,7 +174,7 @@ public:
 
         DeathFunctions::Setup();
 
-        GameState::SetupSaveLoadedHook();
+        EssenceShopHooks::Setup();
 
 
         // Callbacks
@@ -231,6 +243,10 @@ public:
         });
 
         GardenHauntHooks::OnGardenGift([](std::int32_t devilLevel, std::int32_t chosenItemId, std::int32_t chosenItemNum) {
+            ;
+        });
+
+        EssenceShopHooks::OnEssenceBlocked([](std::int32_t itemId) {
             ;
         });
 
