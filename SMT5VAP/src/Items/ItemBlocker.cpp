@@ -1,4 +1,5 @@
 #include "ItemBlocker.hpp"
+#include "src/Hooks/GardenHauntHooks.hpp"
 #include "src/Log/Log.hpp"
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/UFunctionStructs.hpp>
@@ -86,10 +87,19 @@ namespace ItemBlocker {
             int32 num = *NumPtr;
             if (num <= 0) return;
 
+
             bool blocked = s_BlockAll.load(std::memory_order_acquire);
             if (!blocked) {
                 std::lock_guard<std::mutex> lock(s_Mutex);
                 blocked = s_BlockedIds.count(id) > 0;
+            }
+            // Garden/haunt item gifts: block the grant only within a short window
+            // after a PickItemReward call (context-based, not by ID).
+            if (!blocked) {
+                if (GardenHauntHooks::IsSuppressingGardenGiftNow()) {
+                    blocked = true;
+                    GardenHauntHooks::ClearGardenGiftContext();
+                }
             }
             if (!blocked) return;
 
@@ -103,7 +113,7 @@ namespace ItemBlocker {
             }
 
             *NumPtr = 0;
-            DEBUG("[ItemBlocker] Blocked item {} x{}", id, num);
+            LOG("[ItemBlocker] Blocked item {} x{}", id, num);
 
             std::lock_guard<std::mutex> lock(s_Mutex);
             for (auto& cb : s_Callbacks) {

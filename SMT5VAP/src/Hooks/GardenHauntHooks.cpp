@@ -5,6 +5,7 @@
 #include <Unreal/CoreUObject/UObject/UnrealType.hpp>
 #include <vector>
 #include <mutex>
+#include <atomic>
 
 using namespace RC;
 using namespace RC::Unreal;
@@ -14,6 +15,15 @@ namespace GardenHauntHooks {
 static std::vector<GardenGiftCallback> s_GiftCallbacks;
 static std::vector<GardenPowerUpCallback> s_PowerUpCallbacks;
 static std::mutex s_Mutex;
+
+// When true, haunt/garden item gifts are suppressed.
+static std::atomic<bool> s_SuppressGifts{false};
+
+// Context flag for the actual grant (BPL_ItemData::ItemGet). The grant fires
+// AFTER PickItemReward returns, so we arm the flag in the pre-hook and keep it
+// armed until the gift's ItemGet is intercepted (then ItemBlocker clears it).
+// No time limit. Never keyed off the item ID.
+static thread_local bool s_GardenGiftActive{false};
 
 // ── PickItemReward ──
 // Function Project.GardenTalk.PickItemReward
@@ -69,6 +79,13 @@ void Setup() {
             ChosenItemIDProp ? 1 : 0,
             ChosenItemNumProp ? 1 : 0);
 
+        // Arm the context flag before PickItemReward runs. The actual item grant
+        // (BPL_ItemData::ItemGet) fires after PickItemReward returns, so we keep
+        // the flag armed until it is intercepted. Never keyed off the item ID.
+        F->RegisterPreHook([](UnrealScriptFunctionCallableContext&, void*) {
+            s_GardenGiftActive = true;
+        });
+
         F->RegisterPostHook([DevilLevelProp, ChosenItemIDProp, ChosenItemNumProp](
             UnrealScriptFunctionCallableContext& Ctx, void*) {
 
@@ -85,13 +102,20 @@ void Setup() {
             if (ChosenItemNumProp) {
                 chosenItemNum = *ChosenItemNumProp->ContainerPtrToValuePtr<int32>(Ctx.TheStack.Locals());
             }
+
             LOG("[GardenHaunt] Item Gift - DevilLevel={}, ItemID={}, Num={}",
                 devilLevel, chosenItemId, chosenItemNum);
+
+            // Report the pick (always, suppressed or not) so Archipelago can
+            // re-grant it.
             std::lock_guard<std::mutex> L(s_Mutex);
             for (auto& cb : s_GiftCallbacks) {
                 cb(devilLevel, chosenItemId, chosenItemNum);
             }
-            
+
+            // Do NOT disarm here: the grant (BPL_ItemData::ItemGet) happens after
+            // PickItemReward returns. ItemBlocker clears the context once it
+            // blocks the grant, otherwise it auto-expires via the time window.
         });
     } else {
         WARN("[GardenHauntHooks] GardenTalk.PickItemReward NOT FOUND");
@@ -148,6 +172,19 @@ void OnGardenGift(GardenGiftCallback cb) {
 void OnGardenPowerUp(GardenPowerUpCallback cb) {
     std::lock_guard<std::mutex> lock(s_Mutex);
     s_PowerUpCallbacks.push_back(std::move(cb));
+}
+
+void SetSuppressGifts(bool suppress) {
+    s_SuppressGifts.store(suppress, std::memory_order_release);
+    LOG("[GardenHauntHooks] SetSuppressGifts({})", suppress);
+}
+
+bool IsSuppressingGardenGiftNow() {
+    return s_SuppressGifts.load(std::memory_order_acquire) && s_GardenGiftActive;
+}
+
+void ClearGardenGiftContext() {
+    s_GardenGiftActive = false;
 }
 
 } // namespace GardenHauntHooks

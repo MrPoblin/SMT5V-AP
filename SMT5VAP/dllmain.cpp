@@ -146,6 +146,7 @@ public:
         NaviDevilHooks::SetReplaceMacca(1); 
 
         GardenHauntHooks::Setup();
+        GardenHauntHooks::SetSuppressGifts(true);
 
         SaveHooks::Setup();
 
