@@ -66,6 +66,14 @@ static constexpr int32 kEnemyIDArrayOffset = 0x48;
 static constexpr int32 kOuterOffset       = 0x20;
 static constexpr int32 kBossInstanceOffset = 0x0EB0;
 
+// ABattleMainWorkBase:
+//   TArray<FBtlKillData> m_EnemyKillList at +0x0290
+//     FBtlKillData { int32 m_EnemyID; int32 m_KillCnt; } (0x8 bytes)
+static constexpr int32 kEnemyKillListOffset = 0x0290;
+
+// Defeated-enemy record (mirrors FBtlKillData from the dumped headers).
+struct FBtlKillData { int32 m_EnemyID; int32 m_KillCnt; };
+
 static void suppressItems(UObject* resultComp) {
     uint8* base = reinterpret_cast<uint8*>(resultComp) + kResultDataOffset;
 
@@ -135,6 +143,11 @@ static uint8 GetDevilGroup(int32 devilId) {
     return structPtr[8]; // m_Group at offset 8 within FDevilBaseData
 }
 
+// True if the given defeated enemy belongs to the Mitama group.
+bool IsMitamaDevil(int32_t devilId) {
+    return GetDevilGroup(devilId) == kMitamaGroup;
+}
+
 // True if any enemy in the encounter belongs to the Mitama group.
 static bool IsMitamaBattle(UObject* outer) {
     if (!outer) return false;
@@ -181,21 +194,48 @@ void Setup() {
 
             LOG("[BattleHook] Victory - EncID={}, EvtEncID={}, Boss={}", encId, evtEncId, isBoss);
 
-            // Print demon IDs from the encounter
+            // Devil IDs of every enemy in the encounter (not just defeated).
+            std::vector<int32_t> encounteredEnemyIds;
             FScriptArray* enemyIDs = reinterpret_cast<FScriptArray*>(bm + kEncountDataOffset + kEnemyIDArrayOffset);
             if (enemyIDs && enemyIDs->Num() > 0) {
                 int32* ids = static_cast<int32*>(enemyIDs->GetData());
                 for (int32 i = 0; i < enemyIDs->Num(); i++) {
                     if (ids[i] != 0) {
+                        encounteredEnemyIds.push_back(ids[i]);
                         LOG("[BattleHook] Encounter demon ID[{}] = {}", i, ids[i]);
                     }
                 }
             }
 
+            // Devil IDs of every enemy actually defeated this battle.
+            // m_EnemyKillList is de-duplicated by enemy type and carries
+            // m_KillCnt (how many of that type died), so expand by count to
+            // report the true number of defeated enemies (handles multiple
+            // copies of the same foe, e.g. two 290s). A fled/surviving enemy
+            // is simply absent here.
+            std::vector<int32_t> defeatedEnemyIds;
+            {
+                FScriptArray* killList = reinterpret_cast<FScriptArray*>(bm + kEnemyKillListOffset);
+                int32 killCount = killList ? killList->Num() : 0;
+                if (killCount > 0) {
+                    FBtlKillData* data = static_cast<FBtlKillData*>(killList->GetData());
+                    for (int32 i = 0; i < killCount; i++) {
+                        int32 id = data[i].m_EnemyID;
+                        if (id == 0) continue;
+                        int32 cnt = data[i].m_KillCnt > 0 ? data[i].m_KillCnt : 1;
+                        for (int32 k = 0; k < cnt; k++) {
+                            defeatedEnemyIds.push_back(id);
+                            LOG("[BattleHook] Defeated enemy ID = {}", id);
+                        }
+                    }
+                }
+            }
+            LOG("[BattleHook] defeated enemies={}, encountered enemies={}", defeatedEnemyIds.size(), encounteredEnemyIds.size());
+
             // Fire callbacks
             {
                 std::lock_guard<std::mutex> lock(s_Mutex);
-                for (auto& cb : s_Callbacks) cb(encId, evtEncId, isBoss);
+                for (auto& cb : s_Callbacks) cb(encId, evtEncId, isBoss, defeatedEnemyIds, encounteredEnemyIds);
             }
 
             // Suppress items BEFORE SetResultData processes the data

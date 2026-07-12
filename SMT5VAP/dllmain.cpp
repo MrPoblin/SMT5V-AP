@@ -189,7 +189,7 @@ public:
             ;
         });
 
-        BattleHook::OnVictory([](int32_t encounterId, int32_t eventEncounterId, bool isBoss) {
+        BattleHook::OnVictory([](int32_t encounterId, int32_t eventEncounterId, bool isBoss, const std::vector<int32_t>& defeatedEnemyIds, const std::vector<int32_t>& encounteredEnemyIds) {
             ;
         });
 
