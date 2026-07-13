@@ -3,6 +3,7 @@
 #include "src/Log/Log.hpp"
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/World.hpp>
+#include <Unreal/Hooks/Hooks.hpp>
 #include <Windows.h>
 #include <string>
 #include <vector>
@@ -10,38 +11,25 @@
 using namespace RC;
 using namespace RC::Unreal;
 
-void GameState::Update() {
-	if (UpdateWorld()) {
-		UpdateMapName();
-		//UpdatePosition(); Need to fix
-	}
-}
+void GameState::SetupMapLoadHook() {
+	RC::Unreal::HookLoadMap();
 
-bool GameState::UpdateWorld() {
-	UWorld* newWorld = static_cast<UWorld*>(UObjectGlobals::FindFirstOf(STR("World")));
-	if ((m_World == nullptr) != (newWorld == nullptr)) {
-		m_World = newWorld;
-		for (auto& cb : m_WorldCbs) cb(m_World);
-		return m_World;
-	}
-	m_World = newWorld;
-	return m_World;
+	Hook::RegisterLoadMapPostCallback(
+		[](auto&, UEngine*, FWorldContext&, FURL URL, UPendingNetGame*, FString& Error) {
+			std::wstring mapName(URL.Map.GetCharArray().GetData());
+			LOG("[GameState] Level loaded: {}", mapName);
+			m_MapName = mapName;
+			for (auto& cb : m_MapCbs) cb(m_MapName);
+			if (m_MapName.contains(L"LV_Title") && m_IsSaveLoaded) {
+				m_IsSaveLoaded = false;
+				LOG("[GameState] Save unloaded");
+				for (auto& cb : m_SaveCbs) cb(false);
+			}
+		},
+		Hook::FCallbackOptions{});
 }
-
-void GameState::UpdateMapName() {
-	if (const std::wstring& newMapName{ m_World->GetName() }; newMapName != m_MapName) {
-		m_MapName = newMapName;
-		for (auto& cb : m_MapCbs) cb(m_MapName);
-		if (m_MapName == L"LV_Title" && m_IsSaveLoaded) { 
-			m_IsSaveLoaded = false;
-			for (auto& cb : m_SaveCbs) cb(false); }
-	}
-}
-
 
 void GameState::UpdatePosition() {
-	if (!m_World) return;
-
 	static UFunction* s_Fn = nullptr;
 	if (!s_Fn) {
 		s_Fn = UObjectGlobals::FindObject<UFunction>(nullptr,
@@ -58,19 +46,16 @@ void GameState::UpdatePosition() {
 	}
 	if (!Player) return;
 
-	// K2_GetActorLocation takes no params, returns FVector (12 bytes)
-	struct { float X, Y, Z; } Result{};
-	Player->ProcessEvent(s_Fn, &Result);
-	m_PosX = Result.X;
-	m_PosY = Result.Y;
-	m_PosZ = Result.Z;
+	// K2_GetActorLocation returns FVector = 3 floats (12 bytes), which matches Vec3
+	Player->ProcessEvent(s_Fn, &m_Pos);
 }
-
 
 void GameState::SetupSaveLoadedHook() {
 	const auto* Path = STR("/Script/Project.SaveLoadBase:StartDataLoad");
 	HookHelper::HookPostBool(Path, [](bool isLoaded) {
+		// Might have to delay the change until a map has loaded
 		m_IsSaveLoaded = true;
+		LOG("[GameState] Save loaded");
 		for (auto& cb : m_SaveCbs) cb(true);
 		});
 }

@@ -16,12 +16,13 @@ namespace NaviDevilHooks {
 
     // Hybrid: uses AddCheckCounter as trigger + filtered SetGimmickExist for IDs
     // Only fires when both fire on the same frame (eliminates map-load spam)
-    // The Ids are unique per map so we need to find the highest value per map to know how many there are (if there are no gaps)
-    // Minato:
-    // Shinagawa:
-    // Chiyoda: 
-    // Shinjuku: 448 (near government building, so assumed last)
-    // Taito:
+    // The Ids are unique per map
+    // Total number of locations (source: frontiernav.net)
+    // Minato: 225
+    // Shinagawa: 265
+    // Chiyoda: 274
+    // Shinjuku: 455
+    // Taito: 303
     void SetupAddCheckCounter();        // post-hook, sets trigger flag
     void SetupSetGimmickExistFiltered(); // pre-hook, only fires when trigger is active
 

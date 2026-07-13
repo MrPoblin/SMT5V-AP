@@ -86,7 +86,6 @@ public:
 
     auto on_update() -> void override
     {
-        GameState::Update();
         AP::CheckAPConnection();
         if (GameState::IsSaveLoaded()) {
             CompendiumTick::Poll();
@@ -96,6 +95,7 @@ public:
         // For Debugging
         if (GetAsyncKeyState(VK_F3) & 1) {
             DEBUG("Debug Coordinates:");
+            GameState::UpdatePosition();
             DEBUG("X: {}, Y: {}, Z: {}", GameState::PosX(), GameState::PosY(), GameState::PosZ());
         }
         if (GetAsyncKeyState(VK_F4) & 1) {
@@ -129,6 +129,7 @@ public:
         APState::AddEssence(528);
 
         // Hooks
+        GameState::SetupMapLoadHook();
         GameState::SetupSaveLoadedHook();
 
         ItemBlocker::Setup();
@@ -188,26 +189,22 @@ public:
         MiracleHook::SetBlockUnlocks(true);
         
         // Callbacks
-        GameState::OnWorldChanged([](UWorld* World) {
-            if (World) LOG("World created");
-            else LOG("World destroyed");
-            });
-        GameState::OnMapChanged([](const std::wstring& MapName) {LOG("Map changed: {}", MapName);});
         GameState::OnSaveLoaded([](bool isLoaded) {
             if (isLoaded) {
-                LOG("Save loaded");
                 LevelUpTick::Reset();
                 static bool onceAfterSaveInitialized{ false };
                 if (!onceAfterSaveInitialized) {
-                    // Still need to do this on new game started as well
                     ItemLimits::Raise(255);
                     onceAfterSaveInitialized = true;
                 }
             }
-            else LOG("Save unloaded");
             });
 
         //Callback tests
+        GameState::OnMapChanged([](const std::wstring& MapName) {
+            ;
+        });
+
         ChestHooks::OnChestOpened([](std::int32_t takaraSaveId) {
             ;
         });
