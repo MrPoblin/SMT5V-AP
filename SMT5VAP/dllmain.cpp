@@ -18,6 +18,7 @@
 #include "src/Hooks/DevilStatueHooks.hpp"
 #include "src/Hooks/NaviDevilHooks.hpp"
 #include "src/Hooks/GardenHauntHooks.hpp"
+#include "src/Hooks/DemonGiftHooks.hpp"
 #include "src/Hooks/SaveHooks.hpp"
 #include "src/Hooks/EssenceShopHooks.hpp"
 #include "src/Hooks/MiracleHook.hpp"
@@ -170,6 +171,9 @@ public:
         GardenHauntHooks::Setup();
         GardenHauntHooks::SetSuppressGifts(true);
 
+        DemonGiftHooks::Setup();
+        DemonGiftHooks::SetObserve(true);
+
         SaveHooks::Setup();
 
         MissionHooks::Setup();
@@ -249,6 +253,10 @@ public:
         });
 
         GardenHauntHooks::OnGardenGift([](std::int32_t devilLevel, std::int32_t chosenItemId, std::int32_t chosenItemNum) {
+            ;
+        });
+
+        DemonGiftHooks::OnDemonGift([](std::int32_t nkmIndex, std::int32_t lvUp) {
             ;
         });
 
