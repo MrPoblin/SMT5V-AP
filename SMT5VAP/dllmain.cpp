@@ -20,6 +20,7 @@
 #include "src/Hooks/GardenHauntHooks.hpp"
 #include "src/Hooks/SaveHooks.hpp"
 #include "src/Hooks/EssenceShopHooks.hpp"
+#include "src/Hooks/MiracleHook.hpp"
 #include "src/Tick/LevelUpTick.hpp"
 #include "src/Tick/CompendiumTick.hpp"
 #include "src/CustomPopups.hpp"
@@ -92,10 +93,6 @@ public:
         }
 
         // For Debugging
-        if (GetAsyncKeyState(VK_F2) & 1) {
-            DEBUG("Add essence to shop");
-            EssenceShopHooks::AddItemToShop(545);
-        }
         if (GetAsyncKeyState(VK_F3) & 1) {
             DEBUG("Debug Coordinates:");
             DEBUG("X: {}, Y: {}, Z: {}", GameState::PosX(), GameState::PosY(), GameState::PosZ());
@@ -115,6 +112,9 @@ public:
         if (GetAsyncKeyState(VK_F6) & 1 && GameState::IsSaveLoaded()) {
             DeathFunctions::KillLocalPlayer();
             DEBUG("Manual death trigger");
+        }
+        if (GetAsyncKeyState(VK_F7) & 1 && GameState::IsSaveLoaded()) {
+            DEBUG("Miracles unlocked {}", MiracleHook::GrantMiracle(31));
         }
     }
 
@@ -180,7 +180,9 @@ public:
 
         EssenceShopHooks::Setup();
 
-
+        MiracleHook::Setup();
+        MiracleHook::SetBlockUnlocks(true);
+        
         // Callbacks
         GameState::OnWorldChanged([](UWorld* World) {
             if (World) LOG("World created");
@@ -188,14 +190,14 @@ public:
             });
         GameState::OnMapChanged([](const std::wstring& MapName) {LOG("Map changed: {}", MapName);});
         GameState::OnSaveLoaded([](bool isLoaded) {
-            LevelUpTick::Reset();
             if (isLoaded) {
                 LOG("Save loaded");
-                static bool afterSaveInitialized{ false };
-                if (!afterSaveInitialized) {
+                LevelUpTick::Reset();
+                static bool onceAfterSaveInitialized{ false };
+                if (!onceAfterSaveInitialized) {
                     // Still need to do this on new game started as well
                     ItemLimits::Raise(255);
-                    afterSaveInitialized = true;
+                    onceAfterSaveInitialized = true;
                 }
             }
             else LOG("Save unloaded");
