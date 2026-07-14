@@ -93,12 +93,16 @@ namespace ItemBlocker {
                 std::lock_guard<std::mutex> lock(s_Mutex);
                 blocked = s_BlockedIds.count(id) > 0;
             }
-            // Garden/haunt item gifts: block the grant only within a short window
-            // after a PickItemReward call (context-based, not by ID).
+            // Garden/haunt item gifts: block the grant while suppression is armed
+            // and the player is in a haunt level. The real item id is captured from
+            // this very ItemGet call (PickItemReward's out-params are unreliable for
+            // the gift path) and reported to Archipelago for re-grant. Context is
+            // cleared so it cannot over-block later grants.
             if (!blocked) {
                 if (GardenHauntHooks::IsSuppressingGardenGiftNow()) {
                     blocked = true;
-                    GardenHauntHooks::ClearGardenGiftContext();
+                    LOG("[ItemBlocker] Garden gift blocked: id={}, num={}", id, num);
+                    GardenHauntHooks::CaptureGiftGrant(id, num);
                 }
             }
             if (!blocked) return;

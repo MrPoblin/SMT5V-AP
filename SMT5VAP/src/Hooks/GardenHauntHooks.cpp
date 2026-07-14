@@ -3,6 +3,7 @@
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/UFunctionStructs.hpp>
 #include <Unreal/CoreUObject/UObject/UnrealType.hpp>
+#include <Unreal/World.hpp>
 #include <vector>
 #include <mutex>
 #include <atomic>
@@ -18,6 +19,9 @@ static std::mutex s_Mutex;
 
 // When true, haunt/garden item gifts are suppressed.
 static std::atomic<bool> s_SuppressGifts{false};
+
+// The demon level captured from the most recent PickItemReward (for reporting).
+static int32 s_DevilLevel{0};
 
 // Context flag for the actual grant (BPL_ItemData::ItemGet). The grant fires
 // AFTER PickItemReward returns, so we arm the flag in the pre-hook and keep it
@@ -71,51 +75,21 @@ void Setup() {
         LOG("[GardenHauntHooks] GardenTalk.PickItemReward found");
 
         auto* DevilLevelProp   = F->GetPropertyByName(STR("DevilLevel"));
-        auto* ChosenItemIDProp = F->GetPropertyByName(STR("ChosenItemID"));
-        auto* ChosenItemNumProp = F->GetPropertyByName(STR("ChosenItemNum"));
 
-        LOG("[GardenHauntHooks] PickItemReward props: DevilLevel={}, ChosenItemID={}, ChosenItemNum={}",
-            DevilLevelProp ? 1 : 0,
-            ChosenItemIDProp ? 1 : 0,
-            ChosenItemNumProp ? 1 : 0);
+        LOG("[GardenHauntHooks] PickItemReward props: DevilLevel={}",
+            DevilLevelProp ? 1 : 0);
 
-        // Arm the context flag before PickItemReward runs. The actual item grant
-        // (BPL_ItemData::ItemGet) fires after PickItemReward returns, so we keep
-        // the flag armed until it is intercepted. Never keyed off the item ID.
-        F->RegisterPreHook([](UnrealScriptFunctionCallableContext&, void*) {
+        // Arm the context flag before PickItemReward runs and capture the demon
+        // level (the in-param reads fine; the out-params are not reliable for the
+        // gift path, so the real item id is captured later from the ItemGet grant
+        // itself). The actual item grant (BPL_ItemData::ItemGet) fires after
+        // PickItemReward returns, so we keep the flag armed until it is intercepted.
+        F->RegisterPreHook([DevilLevelProp](UnrealScriptFunctionCallableContext& Ctx, void*) {
             s_GardenGiftActive = true;
-        });
-
-        F->RegisterPostHook([DevilLevelProp, ChosenItemIDProp, ChosenItemNumProp](
-            UnrealScriptFunctionCallableContext& Ctx, void*) {
-
-            int32 devilLevel    = 0;
-            int32 chosenItemId  = 0;
-            int32 chosenItemNum = 0;
-
             if (DevilLevelProp) {
-                devilLevel = *DevilLevelProp->ContainerPtrToValuePtr<int32>(Ctx.TheStack.Locals());
+                s_DevilLevel = *DevilLevelProp->ContainerPtrToValuePtr<int32>(Ctx.TheStack.Locals());
             }
-            if (ChosenItemIDProp) {
-                chosenItemId = *ChosenItemIDProp->ContainerPtrToValuePtr<int32>(Ctx.TheStack.Locals());
-            }
-            if (ChosenItemNumProp) {
-                chosenItemNum = *ChosenItemNumProp->ContainerPtrToValuePtr<int32>(Ctx.TheStack.Locals());
-            }
-
-            LOG("[GardenHaunt] Item Gift - DevilLevel={}, ItemID={}, Num={}",
-                devilLevel, chosenItemId, chosenItemNum);
-
-            // Report the pick (always, suppressed or not) so Archipelago can
-            // re-grant it.
-            std::lock_guard<std::mutex> L(s_Mutex);
-            for (auto& cb : s_GiftCallbacks) {
-                cb(devilLevel, chosenItemId, chosenItemNum);
-            }
-
-            // Do NOT disarm here: the grant (BPL_ItemData::ItemGet) happens after
-            // PickItemReward returns. ItemBlocker clears the context once it
-            // blocks the grant, otherwise it auto-expires via the time window.
+            LOG("[GardenHaunt] PickItemReward armed (DevilLevel={})", s_DevilLevel);
         });
     } else {
         WARN("[GardenHauntHooks] GardenTalk.PickItemReward NOT FOUND");
@@ -180,7 +154,60 @@ void SetSuppressGifts(bool suppress) {
 }
 
 bool IsSuppressingGardenGiftNow() {
-    return s_SuppressGifts.load(std::memory_order_acquire) && s_GardenGiftActive;
+    bool isSuppressing{ s_SuppressGifts.load(std::memory_order_acquire) && s_GardenGiftActive && IsInGardenLevel() };
+    ClearGardenGiftContext();
+    return isSuppressing;
+}
+
+void CaptureGiftGrant(int32_t itemId, int32_t itemNum) {
+    LOG("[GardenHaunt] Gift grant captured - DevilLevel={}, ItemID={}, Num={}",
+        s_DevilLevel, itemId, itemNum);
+    {
+        std::lock_guard<std::mutex> L(s_Mutex);
+        for (auto& cb : s_GiftCallbacks) {
+            cb(s_DevilLevel, itemId, itemNum);
+        }
+    }
+}
+
+bool IsInGardenLevel() {
+    // There can be several UWorld objects alive at once (the main world plus
+    // streamed sub-levels such as the haunt itself). FindFirstOf may return a
+    // sub-level world whose authority game mode is null, so iterate and use the
+    // world that actually owns a game mode.
+    AGameModeBase* GM = nullptr;
+    {
+        std::vector<UObject*> Worlds;
+        UObjectGlobals::FindAllOf(STR("World"), Worlds);
+        for (auto* Obj : Worlds) {
+            auto* W = static_cast<UWorld*>(Obj);
+            if (!W) continue;
+            AGameModeBase* Candidate = W->GetAuthorityGameMode();
+            if (Candidate) { GM = Candidate; break; }
+        }
+    }
+    if (!GM) {
+        // Fallback to the original single-world lookup.
+        UWorld* World = static_cast<UWorld*>(UObjectGlobals::FindFirstOf(STR("World")));
+        if (World) GM = World->GetAuthorityGameMode();
+    }
+    if (!GM) return false;
+
+    // BPI_GameMode:IsInGardenLevel is a Blueprint Interface function. Resolve it
+    // off the GameMode instance; try the class map first, then the full chain
+    // (which includes implemented interfaces), mirroring the engine's generated
+    // IBPI_GameMode_C::Execute_IsInGardenLevel.
+    UFunction* F = GM->GetFunctionByName(STR("IsInGardenLevel"));
+    if (!F) F = GM->GetFunctionByNameInChain(STR("IsInGardenLevel"));
+    if (!F) {
+        // Function unresolvable: PickItemReward only fires during a garden/haunt
+        // talk, so its arming is itself a reliable haunt signal; trust it rather
+        // than silently disabling suppression.
+        return true;
+    }
+    struct { bool IsInGardenLevel; } params{};
+    GM->ProcessEvent(F, &params);
+    return params.IsInGardenLevel;
 }
 
 void ClearGardenGiftContext() {

@@ -93,11 +93,6 @@ public:
         }
 
         // For Debugging
-        if (GetAsyncKeyState(VK_F3) & 1) {
-            DEBUG("Debug Coordinates:");
-            GameState::UpdatePosition();
-            DEBUG("X: {}, Y: {}, Z: {}", GameState::PosX(), GameState::PosY(), GameState::PosZ());
-        }
         if (GetAsyncKeyState(VK_F4) & 1) {
             ItemGet::GiveItem(110, 1);
             ItemGet::GiveItem(109, 1);
@@ -116,6 +111,12 @@ public:
         }
         if (GetAsyncKeyState(VK_F7) & 1 && GameState::IsSaveLoaded()) {
             DEBUG("Miracles unlocked {}", MiracleHook::GrantMiracle(31));
+        }
+        if (GetAsyncKeyState(VK_F8) & 1) {
+            DEBUG("Debug Coordinates:");
+            GameState::UpdatePosition();
+            DEBUG("X: {}, Y: {}, Z: {}", GameState::PosX(), GameState::PosY(), GameState::PosZ());
+            DEBUG("Is in haunt: {}", GardenHauntHooks::IsInGardenLevel());
         }
     }
 

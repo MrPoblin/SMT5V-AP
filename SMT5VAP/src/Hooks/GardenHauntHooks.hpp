@@ -22,16 +22,24 @@ void OnGardenPowerUp(GardenPowerUpCallback cb);
 // grant via BPL_ItemData::ItemGet is blocked; power-ups are unaffected).
 void SetSuppressGifts(bool suppress);
 
-// Called by ItemBlocker's BPL_ItemData::ItemGet pre-hook. Returns true while
-// suppression is enabled AND a PickItemReward pick is pending (the actual grant
-// fires after PickItemReward returns and the context is cleared once it is
-// intercepted). No time limit, so a long dialogue can't let the gift through.
-// It is purely context-based — never keyed off the item ID — so it cannot
-// affect other sources.
+// Called by ItemBlocker's BPL_ItemData::ItemGet pre-hook. Returns true only when
+// suppression is enabled, a PickItemReward pick is armed, AND the player is
+// currently in a Demon Haunt / Garden level (BPI_GameMode::IsInGardenLevel).
+// The in-haunt gate is extra safety so a stuck context can never block items
+// outside the haunt.
 bool IsSuppressingGardenGiftNow();
 
-// Disarm the garden-gift context immediately (called by ItemBlocker once it has
-// blocked the grant), so the armed flag cannot over-block later grants.
+// True while the player is in a Demon Haunt / Garden level.
+bool IsInGardenLevel();
+
+// Called by ItemBlocker when it actually blocks a haunt gift grant. Reports the
+// REAL item id/num (captured from the BPL_ItemData::ItemGet call itself) to the
+// Archipelago callback together with the demon level captured at PickItemReward,
+// then disarms the context so it cannot over-block later grants.
+void CaptureGiftGrant(int32_t itemId, int32_t itemNum);
+
+// Disarm the garden-gift context immediately (called by CaptureGiftGrant once it
+// has reported the grant), so the armed flag cannot over-block later grants.
 void ClearGardenGiftContext();
 
 } // namespace GardenHauntHooks
