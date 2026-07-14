@@ -11,6 +11,12 @@
 using namespace RC;
 using namespace RC::Unreal;
 
+void GameState::UpdateIsSaveLoaded(bool isLoaded) {
+	m_IsSaveLoaded = isLoaded;
+	LOG("[GameState] Save {}", isLoaded ? L"loaded" : L"unloaded");
+	for (auto& cb : m_SaveCbs) cb(isLoaded);
+}
+
 void GameState::SetupMapLoadHook() {
 	RC::Unreal::HookLoadMap();
 
@@ -21,9 +27,10 @@ void GameState::SetupMapLoadHook() {
 			m_MapName = mapName;
 			for (auto& cb : m_MapCbs) cb(m_MapName);
 			if (m_MapName.contains(L"LV_Title") && m_IsSaveLoaded) {
-				m_IsSaveLoaded = false;
-				LOG("[GameState] Save unloaded");
-				for (auto& cb : m_SaveCbs) cb(false);
+				UpdateIsSaveLoaded(false);
+			}
+			else if (m_MapName.contains(L"LV_m202") && !m_IsSaveLoaded) { // New game started
+				UpdateIsSaveLoaded(true);
 			}
 		},
 		Hook::FCallbackOptions{});
@@ -54,8 +61,6 @@ void GameState::SetupSaveLoadedHook() {
 	const auto* Path = STR("/Script/Project.SaveLoadBase:StartDataLoad");
 	HookHelper::HookPostBool(Path, [](bool isLoaded) {
 		// Might have to delay the change until a map has loaded
-		m_IsSaveLoaded = true;
-		LOG("[GameState] Save loaded");
-		for (auto& cb : m_SaveCbs) cb(true);
+		UpdateIsSaveLoaded(true);
 		});
 }

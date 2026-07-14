@@ -38,4 +38,6 @@ private:
 
 	inline static std::vector<MapCallback>   m_MapCbs;
 	inline static std::vector<SaveCallback>  m_SaveCbs;
+
+	inline static void UpdateIsSaveLoaded(bool isLoaded);
 };
