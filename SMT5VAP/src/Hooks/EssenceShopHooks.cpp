@@ -6,7 +6,6 @@
 #include <Unreal/CoreUObject/UObject/UnrealType.hpp>
 #include <Unreal/CoreUObject/UObject/Class.hpp>
 #include <vector>
-#include <mutex>
 #include <atomic>
 
 using namespace RC;
@@ -29,8 +28,6 @@ namespace EssenceShopHooks {
     }
 
     // ── State ──
-    static std::mutex s_BlockedMutex;
-    static std::vector<EssenceShopCallback> s_BlockedCallbacks;
     static std::atomic<bool> s_BlockEssences{true};
     static UObject* s_FacilityShopList = nullptr;
 
@@ -114,14 +111,6 @@ namespace EssenceShopHooks {
             removeParams.Index = count - 1;
             shopList->ProcessEvent(s_RemoveAtFn, &removeParams);
 
-            // Fire callback
-            {
-                std::lock_guard<std::mutex> lock(s_BlockedMutex);
-                for (auto& cb : s_BlockedCallbacks) {
-                    cb(itemId);
-                }
-            }
-
             // ── Check if all essences are cleared; if so, batch-add APState ones ── buggy, but it works
             // Re-read TArray after RemoveAt
             void* newDataPtr = *reinterpret_cast<void**>(objBytes + M_ITEMLIST_OFFSET);
@@ -176,10 +165,5 @@ namespace EssenceShopHooks {
     void SetBlockEssences(bool block) {
         s_BlockEssences.store(block);
         LOG("[EssenceShop] SetBlockEssences({})", block);
-    }
-
-    void OnEssenceBlocked(EssenceShopCallback cb) {
-        std::lock_guard<std::mutex> lock(s_BlockedMutex);
-        s_BlockedCallbacks.push_back(std::move(cb));
     }
 }

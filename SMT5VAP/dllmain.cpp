@@ -24,6 +24,7 @@
 #include "src/Hooks/MiracleHook.hpp"
 #include "src/Tick/LevelUpTick.hpp"
 #include "src/Tick/CompendiumTick.hpp"
+#include "src/Hooks/EventFlagHook.hpp"
 #include "src/CustomPopups.hpp"
 #include "src/Items/ItemLimits.hpp"
 #include "src/Items/ItemGet.hpp"
@@ -162,6 +163,8 @@ public:
 
         DevilStatueHooks::Setup();
 
+        EventFlagHook::Setup();
+
         //NaviDevilHooks::SetupUniqueSaveID();
         NaviDevilHooks::SetupAddCheckCounter();
         NaviDevilHooks::SetupSetGimmickExistFiltered();
@@ -258,10 +261,6 @@ public:
             ;
         });
 
-        EssenceShopHooks::OnEssenceBlocked([](std::int32_t itemId) {
-            ;
-        });
-
         GardenHauntHooks::OnGardenPowerUp([](std::int32_t nkmIndex) {
             ;
         });
@@ -276,6 +275,12 @@ public:
 
         CompendiumTick::OnDemonAcquired([](int32_t devilID) {
             ;
+        });
+
+        EventFlagHook::OnFlagSet([](const RC::StringType& flagName) {
+            if (flagName == STR("mis_m064_em2420_4")) { // MIGHT just be the game completion flag
+                DEBUG("mis_m064_em2420_4 SET");
+            }
         });
 
         LOG("Mod initialized");
