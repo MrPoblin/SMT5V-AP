@@ -243,23 +243,35 @@ namespace CustomPopups {
         // Assign to controller (so our bookkeeping matches the game's widget slot).
         SetObjProp(Ctrl, CtrlClass, STR("WB_InfoWindow"), s_Widget);
 
-        // Add to viewport — triggers full initialization (Construct builds the
-        // SsPlayer sub-widget, so it only exists AFTER this point).
+        // IMPORTANT: bReflectParentAlpha is read by the SsPlayer's paint logic at
+        // Construct time (it is never read in C++ — only defaulted to false in the
+        // constructor). CreateWidgetProper runs Construct (which builds the SsPlayer
+        // sub-widget and its alpha-reflection setup) at CREATION time, BEFORE
+        // AddToViewport. So we must set bReflectParentAlpha = 1 on the SsPlayer
+        // BEFORE AddToViewport, otherwise the background ignores the parent's
+        // RenderOpacity and only the text fades. Capture it now (it exists after
+        // Construct) and re-capture after AddToViewport as a fallback.
+        s_SsPlayer = nullptr;
+        auto CaptureSsPlayer = [&]() {
+            if (s_SsPlayer) return;
+            if (auto* SsProp = s_Widget->GetClassPrivate()->GetPropertyByNameInChain(STR("SsPlayerInfoWindow"))) {
+                if (auto* SsPlayer = *static_cast<UObject**>(SsProp->ContainerPtrToValuePtr<UObject*>(s_Widget))) {
+                    s_SsPlayer = SsPlayer;
+                    SetByteProp(SsPlayer, SsPlayer->GetClassPrivate(), STR("bReflectParentAlpha"), 1);
+                }
+            }
+        };
+        CaptureSsPlayer();
+
+        // Add to viewport — triggers full initialization / first paint.
         if (auto* Fn = FindFuncByName(s_Widget->GetClassPrivate(), FName(STR("AddToViewport"), FNAME_Add))) {
             int32 ZOrder = 0;
             s_Widget->ProcessEvent(Fn, &ZOrder);
         }
 
-        // Now that Construct has run, grab the SsPlayer and make it honour the widget
-        // tree's RenderOpacity so our manual fade affects the rendered window graphic
-        // (otherwise only the text fades, not the background).
-        s_SsPlayer = nullptr;
-        if (auto* SsProp = s_Widget->GetClassPrivate()->GetPropertyByNameInChain(STR("SsPlayerInfoWindow"))) {
-            if (auto* SsPlayer = *static_cast<UObject**>(SsProp->ContainerPtrToValuePtr<UObject*>(s_Widget))) {
-                s_SsPlayer = SsPlayer;
-                SetByteProp(SsPlayer, SsPlayer->GetClassPrivate(), STR("bReflectParentAlpha"), 1);
-            }
-        }
+        // Re-capture in case the SsPlayer was (re)created during AddToViewport, and
+        // make sure the flag is set on whatever instance actually renders.
+        CaptureSsPlayer();
 
         // NOTE: Do NOT force the widget's Visibility. The correct enum value differs
         // across engine versions and forcing the wrong one (e.g. Hidden) leaves it
