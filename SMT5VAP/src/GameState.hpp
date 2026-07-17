@@ -17,6 +17,9 @@ public:
 	static const std::wstring& MapName() { return m_MapName; }
 	static bool IsSaveLoaded() { return m_IsSaveLoaded; }
 
+	// Loading / transition tracking.
+	static bool IsTransitioning() { return m_IsTransitioning; }
+
 	static void OnMapChanged(MapCallback cb) { m_MapCbs.push_back(std::move(cb)); }
 	static void OnSaveLoaded(SaveCallback cb) { m_SaveCbs.push_back(std::move(cb)); }
 
@@ -30,14 +33,17 @@ public:
 
 	static void SetupMapLoadHook();
 	static void SetupSaveLoadedHook();
+	static void SetupTransitionHooks();
 
 private:
 	inline static std::wstring m_MapName{};
 	inline static bool m_IsSaveLoaded{ false };
+	inline static bool m_IsTransitioning{ false };
 	inline static Vec3 m_Pos{};
 
 	inline static std::vector<MapCallback>   m_MapCbs;
 	inline static std::vector<SaveCallback>  m_SaveCbs;
 
 	inline static void UpdateIsSaveLoaded(bool isLoaded);
+	static void SetTransitioning(bool value);
 };

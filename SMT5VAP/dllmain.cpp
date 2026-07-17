@@ -88,13 +88,13 @@ public:
     auto on_update() -> void override
     {
         AP::CheckAPConnection();
-        if (GameState::IsSaveLoaded()) {
+        if (GameState::IsSaveLoaded() && !GameState::IsTransitioning()) {
             CompendiumTick::Poll();
             LevelUpTick::Poll();
         }
 
         // For Debugging
-        if (GetAsyncKeyState(VK_F4) & 1) {
+        if (GetAsyncKeyState(VK_F4) & 1 && !GameState::IsTransitioning()) {
             ItemGet::GiveItem(110, 1);
             ItemGet::GiveItem(109, 1);
             ItemGet::GiveItem(82, 1);
@@ -110,8 +110,8 @@ public:
             DeathFunctions::KillLocalPlayer();
             DEBUG("Manual death trigger");
         }
-        if (GetAsyncKeyState(VK_F7) & 1 && GameState::IsSaveLoaded()) {
-            DEBUG("Miracles unlocked {}", MiracleHook::GrantMiracle(31));
+        if (GetAsyncKeyState(VK_F7) & 1) {
+            DEBUG("Map is transitioning {}", GameState::IsTransitioning());
         }
         if (GetAsyncKeyState(VK_F8) & 1) {
             DEBUG("Debug Coordinates:");
@@ -129,9 +129,11 @@ public:
         // Debug
         APState::AddEssence(544);
         APState::AddEssence(528);
+        ItemBlocker::BlockItemId(661);
 
         // Hooks
         GameState::SetupMapLoadHook();
+        GameState::SetupTransitionHooks();
         GameState::SetupSaveLoadedHook();
 
         ItemBlocker::Setup();
@@ -277,9 +279,10 @@ public:
             ;
         });
 
-        EventFlagHook::OnFlagSet([](const RC::StringType& flagName) {
-            if (flagName == STR("mis_m064_em2420_4")) { // MIGHT just be the game completion flag
-                DEBUG("mis_m064_em2420_4 SET");
+        EventFlagHook::OnFlagSet([](const RC::StringType& flagName, bool newValue) {
+            //DEBUG("Flag {} set to {}", flagName, newValue);
+            if (flagName == STR("mis_m064_em2420_4") && newValue) {
+                DEBUG("mis_m064_em2420_4 SET TO TRUE GAME WON?");
             }
         });
 

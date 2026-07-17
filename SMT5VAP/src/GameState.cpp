@@ -17,6 +17,12 @@ void GameState::UpdateIsSaveLoaded(bool isLoaded) {
 	for (auto& cb : m_SaveCbs) cb(isLoaded);
 }
 
+void GameState::SetTransitioning(bool value) {
+	if (m_IsTransitioning == value) return;
+	m_IsTransitioning = value;
+	//LOG("[GameState] Transitioning = {}", value ? L"true" : L"false");
+}
+
 void GameState::SetupMapLoadHook() {
 	RC::Unreal::HookLoadMap();
 
@@ -25,6 +31,8 @@ void GameState::SetupMapLoadHook() {
 			std::wstring mapName(URL.Map.GetCharArray().GetData());
 			LOG("[GameState] Level loaded: {}", mapName);
 			m_MapName = mapName;
+			// The new map is now actually up: the transition window is over.
+			SetTransitioning(false);
 			for (auto& cb : m_MapCbs) cb(m_MapName);
 			if (m_MapName.contains(L"LV_Title") && m_IsSaveLoaded) {
 				UpdateIsSaveLoaded(false);
@@ -34,6 +42,20 @@ void GameState::SetupMapLoadHook() {
 			}
 		},
 		Hook::FCallbackOptions{});
+}
+
+void GameState::SetupTransitionHooks() {
+	// Proper transition-start signal: UE4SS hooks UEngine::LoadMap directly, which
+	// fires before any world teardown on EVERY map/level change (engine-level, so
+	// it does not depend on guessing game-specific Blueprint function names). We
+	// raise the flag here and clear it in the LoadMap post-callback.
+	Hook::RegisterLoadMapPreCallback(
+		[](auto&, UEngine*, FWorldContext&, FURL, UPendingNetGame*, FString&) {
+			SetTransitioning(true);
+		},
+		Hook::FCallbackOptions{});
+
+	LOG("[GameState] Transition-start (LoadMap pre) hook registered");
 }
 
 void GameState::UpdatePosition() {

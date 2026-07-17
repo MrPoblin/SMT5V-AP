@@ -118,14 +118,23 @@ void Poll() {
 
     if (!s_HasInitialCount) {
         // ─── First scan ───
+        // Fire callbacks for every already-registered demon so the consumer can
+        // catch up on anything missed before the mod started tracking. The
+        // consumer is expected to filter what it actually needs.
         s_KnownDevilIDs = std::move(currentDevilIDs);
         s_HasInitialCount = true;
-        LOG("[CompendiumTick] Compendium has {} registered species", s_KnownDevilIDs.size());
+        LOG("[CompendiumTick] Compendium has {} registered species (firing initial callbacks)", s_KnownDevilIDs.size());
         LOG("[Demon] Registered DevilIDs:");
         {
             int32_t c = 0;
             for (int32_t id : s_KnownDevilIDs) {
                 LOG("  [{}/{}] DevilID={}", ++c, s_KnownDevilIDs.size(), id);
+            }
+        }
+        if (!s_KnownDevilIDs.empty()) {
+            std::lock_guard<std::mutex> L(s_Mutex);
+            for (auto& cb : s_Callbacks) {
+                for (int32_t devilID : s_KnownDevilIDs) cb(devilID);
             }
         }
         return;

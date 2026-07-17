@@ -34,17 +34,21 @@ void Setup() {
         return;
     }
 
-    s_SetEventFlagHookId = Func->RegisterPostHook(
+    s_SetEventFlagHookId = Func->RegisterPreHook(
         [NameProp, FlagProp](UnrealScriptFunctionCallableContext& Ctx, void*) {
+            // Pre-hook: input params are valid before the function executes.
+            // (A post-hook would read torn-down locals off the frame stack.)
+            auto* locals = Ctx.TheStack.Locals();
+            if (!locals) return;
+
             bool val = false;
             FName name;
-            if (auto* p = FlagProp->ContainerPtrToValuePtr<bool>(Ctx.TheStack.Locals())) val = *p;
-            if (auto* p = NameProp->ContainerPtrToValuePtr<FName>(Ctx.TheStack.Locals())) name = *p;
-            if (val) {
-                StringType flagName = name.ToString();
-                std::lock_guard<std::mutex> lock(s_Mutex);
-                for (auto& cb : s_Callbacks) cb(flagName);
-            }
+            if (auto* p = FlagProp->ContainerPtrToValuePtr<bool>(locals)) val = *p;
+            if (auto* p = NameProp->ContainerPtrToValuePtr<FName>(locals)) name = *p;
+
+            StringType flagName = name.ToString();
+            std::lock_guard<std::mutex> lock(s_Mutex);
+            for (auto& cb : s_Callbacks) cb(flagName, val);
         }
     );
     LOG("[EventFlagHook] SetEventFlag hook registered (id={})", s_SetEventFlagHookId);
