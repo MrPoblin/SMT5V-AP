@@ -6,10 +6,14 @@
 #include <atomic>
 #include <set>
 #include <unordered_set>
+#include <chrono>
 #include <Windows.h>
 
 namespace AP {
 	constexpr char GameName[]{ "Shin Megami Tensei V: Vengeance" };
+
+    static auto LastPollTime = std::chrono::steady_clock::now();
+    static constexpr auto POLL_INTERVAL = std::chrono::milliseconds(500);
 
     static std::mutex ItemQueueMutex;
     static std::queue<int64_t> ItemQueue;
@@ -117,6 +121,9 @@ namespace AP {
     }
 
     void CheckAPConnection() {
+        auto now = std::chrono::steady_clock::now();
+        if (now - LastPollTime < POLL_INTERVAL) return;
+        LastPollTime = now;
         //If JUST connected
         if (AP_GetConnectionStatus() == AP_ConnectionStatus::Authenticated && getAPConnected() == false) {
             LOG("AP Connected!");
