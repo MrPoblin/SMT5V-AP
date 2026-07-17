@@ -20,6 +20,14 @@ static CallbackId s_SetEventFlagValueHookId{-1};
 static std::vector<FlagSetCallback> s_Callbacks;
 static std::mutex s_Mutex;
 
+// ── Map-event flag hooks (BPL_MapEventData) ──
+static CallbackId s_SetMapEventStartHookId{-1};
+static CallbackId s_SetMapEventEndHookId{-1};
+static CallbackId s_SetMapEventAfterHookId{-1};
+
+static std::vector<MapEventFlagCallback> s_MapEventCallbacks;
+static std::mutex s_MapEventMutex;
+
 // Guard so external writers (e.g. FlagGating) can suppress echo of their own writes.
 static std::atomic<bool> s_SuppressNotify{false};
 void SetSuppressNotify(bool suppress) { s_SuppressNotify.store(suppress, std::memory_order_release); }
@@ -30,6 +38,13 @@ static void Dispatch(const StringType& flagName, bool val) {
     if (IsSuppressNotify()) return;
     std::lock_guard<std::mutex> lock(s_Mutex);
     for (auto& cb : s_Callbacks) cb(flagName, val);
+}
+
+// Forward to map-event subscribers. Skipped when an external writer set the suppress guard.
+static void DispatchMapEvent(int32_t mapEventId, MapEventFlagKind kind, bool val) {
+    if (IsSuppressNotify()) return;
+    std::lock_guard<std::mutex> lock(s_MapEventMutex);
+    for (auto& cb : s_MapEventCallbacks) cb(mapEventId, kind, val);
 }
 
 void Setup() {
@@ -92,6 +107,44 @@ void Setup() {
             }
         }
     }
+
+    // ── Map-event flags (UBPL_MapEventData) ──
+    // These are separate UFunctions from BPL_EventFlag. They take the MAP EVENT
+    // id (not the flag id). Intercepted so all story/map gating is visible here.
+    auto HookMapEventFlag = [](const TCHAR* path, CallbackId& outId, MapEventFlagKind kind) {
+        auto* Func = UObjectGlobals::FindObject<UFunction>(nullptr, path);
+        if (!Func) {
+            WARN("[EventFlagHook] {} NOT FOUND", path);
+            return;
+        }
+        FProperty* EventIdProp = Func->GetPropertyByName(STR("_mapEventID"));
+        FProperty* ValueProp = Func->GetPropertyByName(STR("Value"));
+        if (!EventIdProp || !ValueProp) {
+            WARN("[EventFlagHook] {} param resolution failed", path);
+            return;
+        }
+        outId = Func->RegisterPreHook(
+            [EventIdProp, ValueProp, kind](UnrealScriptFunctionCallableContext& Ctx, void*) {
+                auto* locals = Ctx.TheStack.Locals();
+                if (!locals) return;
+                int32_t eventId = -1;
+                bool val = false;
+                if (auto* p = EventIdProp->ContainerPtrToValuePtr<int32_t>(locals)) eventId = *p;
+                if (auto* p = ValueProp->ContainerPtrToValuePtr<bool>(locals)) val = *p;
+                DispatchMapEvent(eventId, kind, val);
+            }
+        );
+        LOG("[EventFlagHook] {} hook registered (id={})", path, outId);
+    };
+
+    HookMapEventFlag(STR("/Script/Project.BPL_MapEventData:SetMapEventStartFlags"), s_SetMapEventStartHookId, MapEventFlagKind::Start);
+    HookMapEventFlag(STR("/Script/Project.BPL_MapEventData:SetMapEventEndFlag"), s_SetMapEventEndHookId, MapEventFlagKind::End);
+    HookMapEventFlag(STR("/Script/Project.BPL_MapEventData:SetMapEventAfterFlag"), s_SetMapEventAfterHookId, MapEventFlagKind::After);
+}
+
+void OnMapEventFlagSet(MapEventFlagCallback cb) {
+    std::lock_guard<std::mutex> lock(s_MapEventMutex);
+    s_MapEventCallbacks.push_back(std::move(cb));
 }
 
 void OnFlagSet(FlagSetCallback cb) {

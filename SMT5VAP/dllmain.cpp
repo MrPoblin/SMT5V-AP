@@ -49,6 +49,7 @@ private:
     char m_inputPassword[256]{""};
     char m_inputFlagName[256]{""};
     int m_inputFlagId{0};
+    int m_inputMapEventId{0};
 
     static StringType ToWide(const char* s) {
         StringType out;
@@ -94,19 +95,19 @@ public:
             if (ImGui::Button("Set true"))
             {
                 EventFlags::Set(flagName, true);
-                LOG("[Debug] Set flag {} -> TRUE", flagName);
+                LOG("[Debug] Set flag {} -> true", flagName);
             }
             ImGui::SameLine();
             if (ImGui::Button("Set false"))
             {
                 EventFlags::Set(flagName, false);
-                LOG("[Debug] Set flag {} -> FALSE", flagName);
+                LOG("[Debug] Set flag {} -> false", flagName);
             }
             ImGui::SameLine();
             if (ImGui::Button("Get"))
             {
                 bool val = EventFlags::Get(flagName);
-                LOG("[Debug] Get flag {} -> {}", flagName, val ? STR("TRUE") : STR("FALSE"));
+                LOG("[Debug] Get flag {} -> {}", flagName, val ? STR("true") : STR("false"));
             }
 
             ImGui::Separator();
@@ -114,19 +115,55 @@ public:
             if (ImGui::Button("Set ID true"))
             {
                 EventFlags::Set(mod->m_inputFlagId, true);
-                LOG("[Debug] Set flag [{}] -> TRUE", mod->m_inputFlagId);
             }
             ImGui::SameLine();
             if (ImGui::Button("Set ID false"))
             {
                 EventFlags::Set(mod->m_inputFlagId, false);
-                LOG("[Debug] Set flag [{}] -> FALSE", mod->m_inputFlagId);
             }
             ImGui::SameLine();
             if (ImGui::Button("Get ID"))
             {
                 bool val = EventFlags::Get(mod->m_inputFlagId);
-                LOG("[Debug] Get flag [{}] -> {}", mod->m_inputFlagId, val ? STR("TRUE") : STR("FALSE"));
+                LOG("[Debug] Get flag [{}] -> {}", mod->m_inputFlagId, val ? STR("true") : STR("false"));
+            }
+
+            ImGui::Separator();
+            ImGui::Text("Map Event Flags (BPL_MapEventData)");
+            ImGui::InputInt("Map Event ID", &mod->m_inputMapEventId);
+            if (ImGui::Button("Set Start true"))
+            {
+                EventFlags::SetMapEventStart(mod->m_inputMapEventId, true);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Set Start false"))
+            {
+                EventFlags::SetMapEventStart(mod->m_inputMapEventId, false);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Is Active?"))
+            {
+                bool val = EventFlags::IsMapEventActive(mod->m_inputMapEventId);
+                LOG("[Debug] Map event {} active -> {}", mod->m_inputMapEventId, val ? STR("true") : STR("false"));
+            }
+            if (ImGui::Button("Set End true"))
+            {
+                EventFlags::SetMapEventEnd(mod->m_inputMapEventId, true);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Set End false"))
+            {
+                EventFlags::SetMapEventEnd(mod->m_inputMapEventId, false);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Set After true"))
+            {
+                EventFlags::SetMapEventAfter(mod->m_inputMapEventId, true);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Set After false"))
+            {
+                EventFlags::SetMapEventAfter(mod->m_inputMapEventId, false);
             }
             });
     }
@@ -219,7 +256,7 @@ public:
         MimanRewardHooks::Setup();
 
         AogamiHooks::Setup();
-        AogamiHooks::SetReplaceItemId(0); 
+        AogamiHooks::SetReplaceItemId(0);
 
         DevilStatueHooks::Setup();
 
@@ -230,8 +267,8 @@ public:
         NaviDevilHooks::SetupAddCheckCounter();
         NaviDevilHooks::SetupSetGimmickExistFiltered();
         NaviDevilHooks::SetupBlockItems();
-        NaviDevilHooks::SetBlockItems(true); 
-        NaviDevilHooks::SetReplaceMacca(1); 
+        NaviDevilHooks::SetBlockItems(true);
+        NaviDevilHooks::SetReplaceMacca(1);
         NaviDevilHooks::SetupNaviDevilChanged();
 
         GardenHauntHooks::Setup();
@@ -252,7 +289,7 @@ public:
 
         MiracleHook::Setup();
         MiracleHook::SetBlockUnlocks(true);
-        
+
         // Callbacks
         GameState::OnSaveLoaded([](bool isLoaded) {
             if (isLoaded) {
@@ -339,10 +376,16 @@ public:
         });
 
         EventFlagHook::OnFlagSet([](const RC::StringType& flagName, bool newValue) {
-            DEBUG("[EventFlag] {} -> {}", flagName, newValue ? STR("TRUE") : STR("FALSE"));
+            DEBUG("[EventFlag] {} -> {}", flagName, newValue ? STR("true") : STR("false"));
             if (flagName == STR("mis_m064_em2420_4") && newValue) {
-                DEBUG("mis_m064_em2420_4 SET TO TRUE GAME WON?");
+                DEBUG("mis_m064_em2420_4 set to true - game won?");
             }
+        });
+
+        EventFlagHook::OnMapEventFlagSet([](int32_t mapEventId, EventFlagHook::MapEventFlagKind kind, bool value) {
+            const TCHAR* kindStr = kind == EventFlagHook::MapEventFlagKind::Start ? STR("Start")
+                : kind == EventFlagHook::MapEventFlagKind::End ? STR("End") : STR("After");
+            DEBUG("[MapEventFlag] event={} {} -> {}", mapEventId, kindStr, value ? STR("true") : STR("false"));
         });
 
         LOG("Mod initialized");

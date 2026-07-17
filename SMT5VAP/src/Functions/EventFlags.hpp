@@ -27,4 +27,19 @@ namespace EventFlags {
     // Reads a flag by FName.
     bool Get(const RC::StringType& flagName);
 
+    // ── Map-event flags (UBPL_MapEventData) ──
+    // These write/reads go through BPL_MapEventData, a separate store from
+    // BPL_EventFlag. Keyed by MAP EVENT id (e.g. 474, 587), not flag id.
+    void SetMapEventStart(int32_t mapEventId, bool value = true);
+    void SetMapEventEnd(int32_t mapEventId, bool value = true);
+    void SetMapEventAfter(int32_t mapEventId, bool value = true);
+
+    // True if the map event's Start flags are currently satisfied (the event is
+    // armed/active). Poll this for gating decisions.
+    bool IsMapEventActive(int32_t mapEventId);
+
+    // Resolves the underlying flag ids for a map event (start/end/after). Returns
+    // false if resolution failed. -1 means "not set".
+    bool GetMapEventFlagIds(int32_t mapEventId, int32_t& outStart, int32_t& outEnd, int32_t& outAfter);
+
 }
