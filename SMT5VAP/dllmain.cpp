@@ -31,6 +31,7 @@
 #include "src/Items/ItemBlocker.hpp"
 #include "src/Items/MaccaBlocker.hpp"
 #include "src/Functions/DeathFunctions.hpp"
+#include "src/Functions/EventFlags.hpp"
 #include "src/Archipelago/APManager.hpp"
 #include "src/Archipelago/APState.hpp"
 #include <UE4SSProgram.hpp>
@@ -46,6 +47,14 @@ private:
     char m_inputIP[256]{};
     char m_inputSlotName[256]{};
     char m_inputPassword[256]{""};
+    char m_inputFlagName[256]{""};
+    int m_inputFlagId{0};
+
+    static StringType ToWide(const char* s) {
+        StringType out;
+        if (s) for (; *s; ++s) out.push_back(static_cast<wchar_t>(*s));
+        return out;
+    }
 
 public:
     SMT5VAP() : CppUserModBase()
@@ -73,6 +82,52 @@ public:
                 AP::Shutdown();
             }
             ImGui::Text(std::format("AP Status: {}", AP::getAPConnectedStatus()).c_str());
+            });
+
+        register_tab(STR("Debug"), [](CppUserModBase* instance) {
+            auto mod = dynamic_cast<SMT5VAP*>(instance);
+            if (!mod) return;
+
+            ImGui::InputText("Flag Name", mod->m_inputFlagName, IM_ARRAYSIZE(mod->m_inputFlagName));
+
+            StringType flagName = mod->ToWide(mod->m_inputFlagName);
+            if (ImGui::Button("Set true"))
+            {
+                EventFlags::Set(flagName, true);
+                LOG("[Debug] Set flag {} -> TRUE", flagName);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Set false"))
+            {
+                EventFlags::Set(flagName, false);
+                LOG("[Debug] Set flag {} -> FALSE", flagName);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Get"))
+            {
+                bool val = EventFlags::Get(flagName);
+                LOG("[Debug] Get flag {} -> {}", flagName, val ? STR("TRUE") : STR("FALSE"));
+            }
+
+            ImGui::Separator();
+            ImGui::InputInt("Flag ID", &mod->m_inputFlagId);
+            if (ImGui::Button("Set ID true"))
+            {
+                EventFlags::Set(mod->m_inputFlagId, true);
+                LOG("[Debug] Set flag [{}] -> TRUE", mod->m_inputFlagId);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Set ID false"))
+            {
+                EventFlags::Set(mod->m_inputFlagId, false);
+                LOG("[Debug] Set flag [{}] -> FALSE", mod->m_inputFlagId);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Get ID"))
+            {
+                bool val = EventFlags::Get(mod->m_inputFlagId);
+                LOG("[Debug] Get flag [{}] -> {}", mod->m_inputFlagId, val ? STR("TRUE") : STR("FALSE"));
+            }
             });
     }
 
@@ -169,6 +224,7 @@ public:
         DevilStatueHooks::Setup();
 
         EventFlagHook::Setup();
+        EventFlags::Setup();
 
         //NaviDevilHooks::SetupUniqueSaveID();
         NaviDevilHooks::SetupAddCheckCounter();
@@ -215,7 +271,7 @@ public:
         });
 
         ChestHooks::OnChestOpened([](std::int32_t takaraSaveId) {
-            CustomPopups::ShowNotification(L"test");
+            ;
         });
 
         RelicHooks::OnRelicCollected([](std::int32_t relicId) {
@@ -283,7 +339,7 @@ public:
         });
 
         EventFlagHook::OnFlagSet([](const RC::StringType& flagName, bool newValue) {
-            //DEBUG("Flag {} set to {}", flagName, newValue);
+            DEBUG("[EventFlag] {} -> {}", flagName, newValue ? STR("TRUE") : STR("FALSE"));
             if (flagName == STR("mis_m064_em2420_4") && newValue) {
                 DEBUG("mis_m064_em2420_4 SET TO TRUE GAME WON?");
             }
