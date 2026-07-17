@@ -31,7 +31,6 @@ void GameState::SetupMapLoadHook() {
 			std::wstring mapName(URL.Map.GetCharArray().GetData());
 			LOG("[GameState] Level loaded: {}", mapName);
 			m_MapName = mapName;
-			// The new map is now actually up: the transition window is over.
 			SetTransitioning(false);
 			for (auto& cb : m_MapCbs) cb(m_MapName);
 			if (m_MapName.contains(L"LV_Title") && m_IsSaveLoaded) {
@@ -52,6 +51,7 @@ void GameState::SetupTransitionHooks() {
 	Hook::RegisterLoadMapPreCallback(
 		[](auto&, UEngine*, FWorldContext&, FURL, UPendingNetGame*, FString&) {
 			SetTransitioning(true);
+			for (auto& cb : m_TransCbs) cb();
 		},
 		Hook::FCallbackOptions{});
 

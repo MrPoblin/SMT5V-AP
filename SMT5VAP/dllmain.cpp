@@ -88,6 +88,7 @@ public:
     auto on_update() -> void override
     {
         AP::CheckAPConnection();
+        CustomPopups::Update();
         if (GameState::IsSaveLoaded() && !GameState::IsTransitioning()) {
             CompendiumTick::Poll();
             LevelUpTick::Poll();
@@ -111,7 +112,9 @@ public:
             DEBUG("Manual death trigger");
         }
         if (GetAsyncKeyState(VK_F7) & 1) {
-            DEBUG("Map is transitioning {}", GameState::IsTransitioning());
+            static int NotificationCounter{ 0 };
+            CustomPopups::ShowNotificationF("Notification {}", NotificationCounter);
+            NotificationCounter++;
         }
         if (GetAsyncKeyState(VK_F8) & 1) {
             DEBUG("Debug Coordinates:");
@@ -208,11 +211,11 @@ public:
 
         //Callback tests
         GameState::OnMapChanged([](const std::wstring& MapName) {
-            ;
+            CustomPopups::OnMapChanged();
         });
 
         ChestHooks::OnChestOpened([](std::int32_t takaraSaveId) {
-            ;
+            CustomPopups::ShowNotification(L"test");
         });
 
         RelicHooks::OnRelicCollected([](std::int32_t relicId) {

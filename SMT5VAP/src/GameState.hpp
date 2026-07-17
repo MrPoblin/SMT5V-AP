@@ -22,6 +22,11 @@ public:
 
 	static void OnMapChanged(MapCallback cb) { m_MapCbs.push_back(std::move(cb)); }
 	static void OnSaveLoaded(SaveCallback cb) { m_SaveCbs.push_back(std::move(cb)); }
+	// Fires the instant a transition BEGINS (LoadMap pre-callback), while the old
+	// world is still alive. Use this to clean up map-owned objects (e.g. popups)
+	// before they are torn down.
+	using TransitionCallback = std::function<void()>;
+	static void OnTransitionStart(TransitionCallback cb) { m_TransCbs.push_back(std::move(cb)); }
 
 	// Position tracking
 	struct Vec3 { float X{}, Y{}, Z{}; };
@@ -43,6 +48,7 @@ private:
 
 	inline static std::vector<MapCallback>   m_MapCbs;
 	inline static std::vector<SaveCallback>  m_SaveCbs;
+	inline static std::vector<TransitionCallback> m_TransCbs;
 
 	inline static void UpdateIsSaveLoaded(bool isLoaded);
 	static void SetTransitioning(bool value);
