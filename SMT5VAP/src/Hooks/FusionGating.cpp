@@ -256,10 +256,18 @@ static void WriteSelectable(void* base, int i, int selOff, uint8_t val) {
 // (scroll/refresh) because the builder re-runs and re-compacts every time.
 // Layout: base=*(a1+arrOff), count=*(a1+arrOff+8), cap=*(a1+arrOff+12),
 // entry i at base + stride*i, devil id (uint16) at +devidOff.
-static void CompactGatedEntries(__int64 a1, int arrOff, int stride, int devidOff, const wchar_t* tag) {
+// Compact gated entries out of a fusion result array.
+//   arrOff   : offset of the array header (base ptr lives at arrOff)
+//   countOff : offset (relative to arrOff) of the count dword.
+//              Standard TArray uses +8; the special-fusion GROUP array uses -4
+//              because its count is stored at a1+1132 while the base ptr is at
+//              a1+1136.
+//   capOff   : offset (relative to arrOff) of the capacity dword (+12 standard).
+static void CompactGatedEntriesEx(__int64 a1, int arrOff, int countOff, int capOff,
+                                  int stride, int devidOff, const wchar_t* tag) {
     void* base = *reinterpret_cast<void**>(a1 + arrOff);
-    int count = *reinterpret_cast<int*>(a1 + arrOff + 8);
-    int cap = *reinterpret_cast<int*>(a1 + arrOff + 12);
+    int count = *reinterpret_cast<int*>(a1 + arrOff + countOff);
+    int cap = *reinterpret_cast<int*>(a1 + arrOff + capOff);
     if (!base || count <= 0 || cap <= 0 || count > cap || count > 4096) return;
     if (stride <= 0) stride = 48;
     int w = 0;
@@ -279,7 +287,10 @@ static void CompactGatedEntries(__int64 a1, int arrOff, int stride, int devidOff
         }
         ++w;
     }
-    *reinterpret_cast<int*>(a1 + arrOff + 8) = w;
+    *reinterpret_cast<int*>(a1 + arrOff + countOff) = w;
+}
+static inline void CompactGatedEntries(__int64 a1, int arrOff, int stride, int devidOff, const wchar_t* tag) {
+    CompactGatedEntriesEx(a1, arrOff, 8, 12, stride, devidOff, tag);
 }
 
 // Diagnostic-only hook: logs the populated array shape (and the dispatcher mode
@@ -290,10 +301,14 @@ struct DiagHook {
     Fn Orig = nullptr;
     std::unique_ptr<PLH::x64Detour> Detour;
     int ArrOff = 1216;
+    int CountOff = 8;   // offset (rel to ArrOff) of count dword
+    int CapOff = 12;    // offset (rel to ArrOff) of capacity dword
     int selOffGray = 21;
     int Stride = 48;
     int DevidOff = 4;
     int ArrOff2 = 0;   // optional 2nd (source) array to compact
+    int CountOff2 = 8;
+    int CapOff2 = 12;
     int Stride2 = 48;
     int DevidOff2 = 4;
     std::string Tag = "";
@@ -331,11 +346,47 @@ static char __fastcall HkDiagList(int idx, __int64 a1) {
 }
 
 // Per-index trampolines. Each forwards to HkDiagList(idx) then optionally compacts.
+static inline int ArrCountEx(__int64 a1, int off, int countOff, int capOff) {
+    void* base = *reinterpret_cast<void**>(a1 + off);
+    int count = *reinterpret_cast<int*>(a1 + off + countOff);
+    int cap = *reinterpret_cast<int*>(a1 + off + capOff);
+    return (base && count >= 0 && count <= cap && count <= 4096) ? count : -1;
+}
+static inline int ArrCount(__int64 a1, int off) {
+    return ArrCountEx(a1, off, 8, 12);
+}
 static inline void DoGrayCompact(DiagHook& h, __int64 a1) {
     if (!h.DoGray || !IsEnabled()) return;
-    CompactGatedEntries(a1, h.ArrOff, h.Stride, h.DevidOff, STR("[REMOVE]"));
-    if (h.ArrOff2 != 0) {
-        CompactGatedEntries(a1, h.ArrOff2, h.Stride2, h.DevidOff2, STR("[REMOVE]"));
+    static std::atomic<uint64_t> sCall{0};
+    uint64_t c = sCall.fetch_add(1, std::memory_order_relaxed);
+    int pre1 = ArrCountEx(a1, h.ArrOff, h.CountOff, h.CapOff);
+    int pre2 = h.ArrOff2 ? ArrCountEx(a1, h.ArrOff2, h.CountOff2, h.CapOff2) : -1;
+    CompactGatedEntriesEx(a1, h.ArrOff, h.CountOff, h.CapOff, h.Stride, h.DevidOff, STR("[REMOVE]"));
+    if (h.ArrOff2 != 0)
+        CompactGatedEntriesEx(a1, h.ArrOff2, h.CountOff2, h.CapOff2, h.Stride2, h.DevidOff2, STR("[REMOVE]"));
+    if (h.Tag.find("Special") != std::string::npos && c < 3 && h.ArrOff2 != 0) {
+        void* base = *reinterpret_cast<void**>(a1 + h.ArrOff2);
+        int cnt = *reinterpret_cast<int*>(a1 + h.ArrOff2 + h.CountOff2);
+        std::wstring dump = L"SRC_FULL cnt=" + std::to_wstring(cnt) + L": ";
+        for (int i = 0; i < cnt && i < 40; ++i) {
+            uintptr_t e = (uintptr_t)base + h.Stride2 * (uintptr_t)i;
+            int q0 = *(int*)(e + 0);
+            int q4 = *(int*)(e + 4);
+            int q8 = *(int*)(e + 8);
+            int q12 = *(int*)(e + 12);
+            int q16 = *(int*)(e + 16);
+            int q20 = *(int*)(e + 20);
+            int q24 = *(int*)(e + 24);
+            int q28 = *(int*)(e + 28);
+            int q32 = *(int*)(e + 32);
+            int q36 = *(int*)(e + 36);
+            int q40 = *(int*)(e + 40);
+            dump += L"#" + std::to_wstring(i) + L"(" + std::to_wstring(q0) + L"," + std::to_wstring(q4) + L","
+                  + std::to_wstring(q8) + L"," + std::to_wstring(q12) + L"," + std::to_wstring(q16) + L","
+                  + std::to_wstring(q20) + L"," + std::to_wstring(q24) + L"," + std::to_wstring(q28) + L","
+                  + std::to_wstring(q32) + L"," + std::to_wstring(q36) + L"," + std::to_wstring(q40) + L") ";
+        }
+        LOG("[FusionGating]{}", dump);
     }
 }
 static char __fastcall HkDiagTramp0(__int64 a1) { char r = HkDiagList(0, a1); DoGrayCompact(s_Diag[0], a1); return r; }
@@ -361,17 +412,21 @@ static void TryInstallBuildHook() {
     uintptr_t moduleBase = reinterpret_cast<uintptr_t>(thunk) - 0x140D5E440;
 
     // Hook every candidate fusion-list builder with a diagnostic trampoline.
-    // arrOff = offset of the TArray (base/count/cap) in `this`. gray flag set
-    // later once we confirm which builders serve reverse/special primary.
-    struct Spec { uint64_t off; int arrOff; const char* tag; bool disp; bool gray; int selOff; int stride; int devidOff; int arrOff2; int stride2; int devidOff2; };
+    // arrOff = offset of the TArray (base ptr) in `this`.
+    // countOff/capOff = dword offsets relative to arrOff (standard TArray: 8/12).
+    struct Spec {
+        uint64_t off; int arrOff; int countOff; int capOff; const char* tag;
+        bool disp; bool gray; int selOff; int stride; int devidOff;
+        int arrOff2; int countOff2; int capOff2; int stride2; int devidOff2;
+    };
     Spec specs[] = {
-        { 0x140BB6460, 1216, "DyadSec(6460)", false, true,  20, 48, 4, 960, 32, 12 },  // dyad secondary: result+source(a1+960,str32,devid+12)
-        { 0x140BB6CF0, 1216, "RevSec(6cf0)",  false, true,  21, 48, 4, 0, 48, 4 },  // reverse secondary (gray)
-        { 0x140BB7950, 1200, "Special(7950)", false, true,  21, 48, 4, 1136, 48, 16 },  // special: result(a1+1200,str48,d+4)+source(a1+1136,str48,d+16)
-        { 0x140BB7500, 1216, "Disp(7500)",    true,  false, 21, 48, 4, 0, 48, 4 },  // dispatcher (mode byte@1098)
-        { 0x140BB7570, 1024, "Dyprim(7570)",  false, true,  21,  4, 0, 0, 4, 0 },  // reverse-primary result list (gray)
-        { 0x140BB7760, 1008, "RevSecPop(7760)",false,false, 21, 48, 4, 0, 48, 4 },  // reverse secondary populator
-        { 0x140BB8060, 1216, "RevPrim(8060)", false, true,  21, 48, 4, 0, 48, 4 },  // reverse result list (gray, if it fires)
+        { 0x140BB6460, 1216, 8, 12, "DyadSec(6460)", false, true,  20, 48, 4, 960, 8, 12, 32, 12 },  // dyad secondary: result+source(a1+960,str32,devid+12)
+        { 0x140BB6CF0, 1216, 8, 12, "RevSec(6cf0)",  false, true,  21, 48, 4, 0, 8, 12, 48, 4 },  // reverse secondary (gray)
+        { 0x140BB7950, 1200, 8, 12, "Special(7950)", false, true,  21, 48, 4, 1136, -4, 8, 48, 16 },  // special: flatten(a1+1200) + group src(a1+1136,count@a1+1132,devid+16)
+        { 0x140BB7500, 1216, 8, 12, "Disp(7500)",    true,  false, 21, 48, 4, 0, 8, 12, 48, 4 },  // dispatcher (mode byte@1098)
+        { 0x140BB7570, 1024, 8, 12, "Dyprim(7570)",  false, true,  21,  4, 0, 0, 8, 12, 4, 0 },  // reverse-primary result list (gray)
+        { 0x140BB7760, 1008, 8, 12, "RevSecPop(7760)",false,false, 21, 48, 4, 0, 8, 12, 48, 4 },  // reverse secondary populator
+        { 0x140BB8060, 1216, 8, 12, "RevPrim(8060)", false, true,  21, 48, 4, 0, 8, 12, 48, 4 },  // reverse result list (gray, if it fires)
     };
     s_Diag.clear();
     for (auto& s : specs) {
@@ -380,9 +435,11 @@ static void TryInstallBuildHook() {
             LOG("[FusionGating] method {:p} out of range", m); continue;
         }
         DiagHook dh;
-        dh.ArrOff = s.arrOff; dh.Tag = s.tag; dh.IsDispatcher = s.disp; dh.selOffGray = s.selOff;
+        dh.ArrOff = s.arrOff; dh.CountOff = s.countOff; dh.CapOff = s.capOff;
+        dh.Tag = s.tag; dh.IsDispatcher = s.disp; dh.selOffGray = s.selOff;
         dh.Stride = s.stride; dh.DevidOff = s.devidOff;
-        dh.ArrOff2 = s.arrOff2; dh.Stride2 = s.stride2; dh.DevidOff2 = s.devidOff2;
+        dh.ArrOff2 = s.arrOff2; dh.CountOff2 = s.countOff2; dh.CapOff2 = s.capOff2;
+        dh.Stride2 = s.stride2; dh.DevidOff2 = s.devidOff2;
         uint64_t orig = 0;
         int idx = (int)s_Diag.size();
         s_Diag.push_back(std::move(dh));
@@ -528,9 +585,19 @@ static void CompactArrayAt(__int64 arrPtr, int stride, int devidOff) {
         uint16_t did = *reinterpret_cast<uint16_t*>(e + devidOff);
         int32 race = CachedRace((int32)did);
         bool gated = (did > 0 && race >= 0 && APState::FusionRaces::IsRaceGated(race));
-        if (gated) {
+        // Special-fusion source array (a1+1136) is a 2-level grouped structure:
+        // group-container entries store a heap pointer at offset +0 (no devil id),
+        // with their gated children already removed. Drop those emptied containers
+        // too so the UI doesn't render them as placeholder slots.
+        uint64_t head = *reinterpret_cast<uint64_t*>(e + 0);
+        // Empty group-container entries (special fusion source) have no devil id
+        // at devidOff but a non-null pointer at +0 -> drop them so they don't
+        // render as placeholder slots.
+        bool emptyContainer = (did == 0 && head != 0);
+        if (gated || emptyContainer) {
             DiagOnce(STR("[COMP_REMOVE] removed devil=") + std::to_wstring((int)did)
-                + STR(" race=") + std::to_wstring(race));
+                + STR(" race=") + std::to_wstring(race)
+                + (emptyContainer ? STR(" (empty-container)") : STR("")));
             continue;
         }
         if (w != i) {
@@ -540,6 +607,10 @@ static void CompactArrayAt(__int64 arrPtr, int stride, int devidOff) {
         ++w;
     }
     *reinterpret_cast<int*>(arrPtr + 8) = w;
+    if (count != w && (count - w) > 0) {
+        LOG("[COMPACT] removed {} ({}->{}) stride={} devidOff={}",
+            (int64_t)(count - w), (int64_t)count, (int64_t)w, (int64_t)stride, (int64_t)devidOff);
+    }
 }
 
 static __int64 __fastcall HkCompose(__int64 a1, __int64 a2, __int64 a3) {
@@ -566,29 +637,91 @@ static void TryInstallCompendiumHook() {
     LOG("[FusionGating] compose hook installed: method={:p} orig={:p}", (void*)target, (void*)orig);
 }
 
+// ── Special-fusion displayed result array ──
+// Builder sub_140BB7950 (Special(7950)) fills the displayed list into the
+// TArray at panel offset 1200 (stride 48, count@1208, cap@1212) -- this is the
+// array GetSpecialFusionDevilCount / GetSpecialFusionDevilByIndex read.
+// We compact it (remove gated) and make the count getter return the new count
+// so the widget iterates only valid, non-gated entries. The 7950 post-hook
+// (spec arrOff=1200) compacts the same array once at build time; this hook
+// re-asserts compaction (idempotent) and returns the authoritative count so
+// count/getter and ByIndex always agree.
+static const int kSpecialResultOff = 1200;   // TArray<result> in panel (the displayed list)
+static const int kSpecialStride = 48;        // stride in builder sub_140BB7950
+static const int kSpecialDevidOff = 4;       // DevilID dword within 48-byte entry
+
+using TGetCount = int32_t(__fastcall*)(UObject*, void*);
+static TGetCount s_GetCountOrig = nullptr;
+static std::unique_ptr<PLH::x64Detour> s_GetCountDetour;
+static std::atomic<bool> s_GetCountInstalled{false};
+
+static int32_t __fastcall HkGetSpecialCount(UObject* Ctx, void* Parms) {
+    int32_t r = s_GetCountOrig(Ctx, Parms);
+    if (!IsEnabled() || !Ctx) return r;
+    // Compact the displayed member array; the widget will then read the new
+    // (smaller) list. Return the post-compaction count so iteration is correct.
+    int64_t arrPtr = (int64_t)Ctx + kSpecialResultOff;
+    void* base = *reinterpret_cast<void**>(arrPtr + 0);
+    int count = *reinterpret_cast<int*>(arrPtr + 8);
+    int cap = *reinterpret_cast<int*>(arrPtr + 12);
+    if (base && count > 0 && cap > 0 && count <= cap && count <= 4096) {
+        int w = 0;
+        for (int i = 0; i < count; ++i) {
+            uintptr_t e = (uintptr_t)base + kSpecialStride * (uintptr_t)i;
+            int did = *reinterpret_cast<int32_t*>(e + kSpecialDevidOff);
+            int race = CachedRace(did);
+            bool gated = (did > 0 && race >= 0 && APState::FusionRaces::IsRaceGated(race));
+            if (gated) continue;
+            if (w != i) std::memmove((void*)((uintptr_t)base + kSpecialStride * (uintptr_t)w),
+                                     (void*)e, (size_t)kSpecialStride);
+            ++w;
+        }
+        *reinterpret_cast<int*>(arrPtr + 8) = w;
+        if (w != r) LOG(STR("[SPECIAL_FIX] count {}->{} (gated removed)"),
+            (int64_t)r, (int64_t)w);
+        r = w;
+    }
+    return r;
+}
+
+static void TryInstallSpecialGetterHook() {
+    if (s_GetCountInstalled.exchange(true)) return;
+    UFunction* Fn = nullptr;
+    for (auto* p : {
+        STR("/Script/Project.AUniteCharaPanelCtrlBase:GetSpecialFusionDevilCount"),
+        STR("/Script/Project.UniteCharaPanelCtrlBase:GetSpecialFusionDevilCount") }) {
+        Fn = UObjectGlobals::FindObject<UFunction>(nullptr, p);
+        if (Fn) break;
+    }
+    if (!Fn) { LOG("[FusionGating] GetSpecialFusionDevilCount UFunction NOT FOUND"); s_GetCountInstalled.store(false); return; }
+    void* thunk = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(Fn->GetFunc()));
+    if (!thunk) { LOG("[FusionGating] GetSpecialFusionDevilCount GetFunc() null"); s_GetCountInstalled.store(false); return; }
+    uint64_t orig = 0;
+    auto det = std::make_unique<PLH::x64Detour>(
+        reinterpret_cast<uint64_t>(thunk),
+        reinterpret_cast<uint64_t>(PLH::FnCast(HkGetSpecialCount, &s_GetCountOrig)), &orig);
+    if (!det->hook()) {
+        LOG("[FusionGating] special count x64Detour FAILED at {:p}", thunk);
+        s_GetCountInstalled.store(false); return;
+    }
+    s_GetCountOrig = PLH::FnCast(orig, s_GetCountOrig);
+    s_GetCountDetour = std::move(det);
+    LOG("[FusionGating] special count hook installed: {:p} orig={:p}", thunk, (void*)orig);
+}
+
 void Setup() {
     LOG("[FusionGating] Setup...");
 
-    // Install native hooks + one-time reflection dump the first time the panel
-    // initializes.
-    Hook::RegisterProcessEventPostCallback(
-        [](Hook::TCallbackIterationData<void>&, UObject* Context, UFunction* Function, void* Parms) {
-            if (!IsEnabled() || !Function || !Context || !Parms) return;
-            std::wstring cls = std::wstring(Context->GetClassPrivate()->GetName().c_str());
-            if (cls != STR("BP_UniteCharaPanelCtrl_C")) return;
-            std::wstring fn = std::wstring(Function->GetFName().ToString());
-            if (fn != STR("BIESetInitializePanelAnimation")) return;
-            BuildRaceCache();
-            TryInstallNativeHook();
-            TryInstallBuildHook();
-            TryInstallCompendiumHook();
-        },
-        Hook::FCallbackOptions{
-            .OwnerModName = STR("SMT5VAP"),
-            .HookName = STR("FusionGatingInit")
-        }
-    );
-    LOG("[FusionGating] Registered fusion gating hooks");
+    // Install everything up-front (module init), NOT on first panel animation.
+    // The race lookup and all builder/predicate addresses are available now that
+    // the game is loaded, and installing early guarantees the fusion list
+    // builders are already hooked before the very first panel is drawn -- fixing
+    // the "first open shows gated demons" bug.
+    BuildRaceCache();
+    TryInstallNativeHook();
+    TryInstallBuildHook();
+    TryInstallCompendiumHook();
+    TryInstallSpecialGetterHook();
 
     LOG("[FusionGating] Setup complete");
 }

@@ -233,6 +233,7 @@ public:
         APState::Essences::AddEssence(528);
         ItemBlocker::BlockItemId(661);
         APState::FusionRaces::Fill();
+        APState::FusionRaces::SetRaceGated(3, false);
 
         // Hooks
         GameState::SetupMapLoadHook();
