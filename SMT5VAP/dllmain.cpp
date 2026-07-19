@@ -296,7 +296,6 @@ public:
 
         EssenceShopHooks::Setup();
 
-        FusionGating::Setup();
 
         MiracleHook::Setup();
         MiracleHook::SetBlockUnlocks(true);
@@ -308,6 +307,8 @@ public:
                 static bool onceAfterSaveInitialized{ false };
                 if (!onceAfterSaveInitialized) {
                     ItemLimits::Raise(255);
+                    FusionGating::Setup();
+
                     onceAfterSaveInitialized = true;
                 }
             }
