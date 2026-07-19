@@ -30,8 +30,10 @@
 #include "src/Items/ItemGet.hpp"
 #include "src/Items/ItemBlocker.hpp"
 #include "src/Items/MaccaBlocker.hpp"
+#include "src/Items/ExpGive.hpp"
 #include "src/Functions/DeathFunctions.hpp"
 #include "src/Functions/EventFlags.hpp"
+#include "src/Functions/LevelFunctions.hpp"
 #include "src/Archipelago/APManager.hpp"
 #include "src/Archipelago/APState.hpp"
 #include <UE4SSProgram.hpp>
@@ -214,6 +216,10 @@ public:
             DEBUG("X: {}, Y: {}, Z: {}", GameState::PosX(), GameState::PosY(), GameState::PosZ());
             DEBUG("Is in haunt: {}", GardenHauntHooks::IsInGardenLevel());
         }
+        if (GetAsyncKeyState(VK_F9) & 1 && GameState::IsSaveLoaded()) {
+            ExpGive::GiveExpBundle(ExpGive::ExpTier::Medium);
+            DEBUG("Gave Medium EXP bundle (relative) to player + demons");
+        }
     }
 
     auto on_unreal_init() -> void override
@@ -262,6 +268,7 @@ public:
 
         EventFlagHook::Setup();
         EventFlags::Setup();
+        LevelFunctions::Setup();
 
         //NaviDevilHooks::SetupUniqueSaveID();
         NaviDevilHooks::SetupAddCheckCounter();

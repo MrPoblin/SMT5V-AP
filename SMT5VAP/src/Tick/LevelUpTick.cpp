@@ -1,9 +1,6 @@
 #include "LevelUpTick.hpp"
+#include "src/Functions/LevelFunctions.hpp"
 #include "src/Log/Log.hpp"
-#include <Unreal/UObjectGlobals.hpp>
-#include <Unreal/UFunctionStructs.hpp>
-#include <Unreal/UObject.hpp>
-#include <Unreal/CoreUObject/UObject/Class.hpp>
 #include <mutex>
 #include <vector>
 #include <chrono>
@@ -13,55 +10,9 @@ using namespace RC::Unreal;
 
 namespace LevelUpTick {
 
-// E_PLAYER_TYPE::E_PLAYER_NAHOBINO — the protagonist.
-static constexpr uint8 kProtagonist = 2;
-
-// ── Protagonist level accessor (BPL_PartyData::GetPlayerLevel) ──
-static UFunction* s_GetPlayerLevelFunc = nullptr;
-static UObject* s_PartyDataCDO = nullptr;
-static bool s_PartyDataInitFailed = false;
-
 // ── Polling state (3s real-time interval, framerate-independent) ──
 static auto s_LastPollTime = std::chrono::steady_clock::now();
 static constexpr auto POLL_INTERVAL = std::chrono::seconds(3);
-
-static void InitPartyData() {
-    if (s_GetPlayerLevelFunc || s_PartyDataInitFailed) return;
-    s_GetPlayerLevelFunc = UObjectGlobals::FindObject<UFunction>(nullptr,
-        STR("/Script/Project.BPL_PartyData:GetPlayerLevel"));
-    if (!s_GetPlayerLevelFunc)
-        s_GetPlayerLevelFunc = UObjectGlobals::FindObject<UFunction>(nullptr,
-            STR("/Script/Project.BPL_PartyData_C:GetPlayerLevel"));
-    if (!s_GetPlayerLevelFunc) {
-        WARN("[LevelUpTick] GetPlayerLevel not found");
-        s_PartyDataInitFailed = true;
-        return;
-    }
-    s_PartyDataCDO = UObjectGlobals::StaticFindObject_InternalSlow(nullptr, nullptr,
-        STR("/Script/Project.Default__BPL_PartyData"));
-    if (!s_PartyDataCDO)
-        s_PartyDataCDO = UObjectGlobals::StaticFindObject_InternalSlow(nullptr, nullptr,
-            STR("/Script/Project.Default__BPL_PartyData_C"));
-    if (!s_PartyDataCDO) {
-        auto* cls = UObjectGlobals::FindObject<UClass>(nullptr, STR("/Script/Project.BPL_PartyData"));
-        if (!cls) cls = UObjectGlobals::FindObject<UClass>(nullptr, STR("/Script/Project.BPL_PartyData_C"));
-        if (cls) s_PartyDataCDO = cls->CreateDefaultObject();
-    }
-    if (!s_PartyDataCDO) {
-        WARN("[LevelUpTick] BPL_PartyData CDO not found");
-        s_PartyDataInitFailed = true;
-    }
-}
-
-static int32 GetProtagonistLevel() {
-    InitPartyData();
-    if (!s_GetPlayerLevelFunc || !s_PartyDataCDO) return -1;
-    struct FParams { uint8 playerType; int32 ReturnValue; };
-    FParams params{};
-    params.playerType = kProtagonist;
-    s_PartyDataCDO->ProcessEvent(s_GetPlayerLevelFunc, &params);
-    return params.ReturnValue;
-}
 
 // ── Callbacks ──
 static std::vector<LevelUpCallback> s_Callbacks;
@@ -106,7 +57,7 @@ void Poll() {
     if (now - s_LastPollTime < POLL_INTERVAL) return;
     s_LastPollTime = now;
 
-    DetectLevelChange(GetProtagonistLevel());
+    DetectLevelChange(LevelFunctions::GetProtagonistLevel());
 }
 
 void OnLevelUp(LevelUpCallback cb) {
