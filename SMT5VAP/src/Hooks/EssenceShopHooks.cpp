@@ -127,7 +127,7 @@ namespace EssenceShopHooks {
             }
 
             if (!anyEssencesRemain) {
-                auto apEssences = APState::GetAllEssences();
+                auto apEssences = APState::Essences::GetAllEssences();
                 if (!apEssences.empty()) {
                     LOG("[EssenceShop] All essences cleared. Re-adding {} earned essence(s) from APState", apEssences.size());
                     for (auto id : apEssences) {

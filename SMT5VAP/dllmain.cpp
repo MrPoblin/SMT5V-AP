@@ -21,6 +21,7 @@
 #include "src/Hooks/DemonGiftHooks.hpp"
 #include "src/Hooks/SaveHooks.hpp"
 #include "src/Hooks/EssenceShopHooks.hpp"
+#include "src/Hooks/FusionGating.hpp"
 #include "src/Hooks/MiracleHook.hpp"
 #include "src/Tick/LevelUpTick.hpp"
 #include "src/Tick/CompendiumTick.hpp"
@@ -228,9 +229,10 @@ public:
         DEBUG("Mod initializing{}");
 
         // Debug
-        APState::AddEssence(544);
-        APState::AddEssence(528);
+        APState::Essences::AddEssence(544);
+        APState::Essences::AddEssence(528);
         ItemBlocker::BlockItemId(661);
+        APState::FusionRaces::Fill();
 
         // Hooks
         GameState::SetupMapLoadHook();
@@ -293,6 +295,8 @@ public:
         DeathFunctions::Setup();
 
         EssenceShopHooks::Setup();
+
+        FusionGating::Setup();
 
         MiracleHook::Setup();
         MiracleHook::SetBlockUnlocks(true);
@@ -386,6 +390,9 @@ public:
             DEBUG("[EventFlag] {} -> {}", flagName, newValue ? STR("true") : STR("false"));
             if (flagName == STR("mis_m064_em2420_4") && newValue) {
                 DEBUG("mis_m064_em2420_4 set to true - game won?");
+            }
+            if (flagName.contains(L"Statue_") && newValue) {
+                DEBUG("Giant Devil Statue Checked: {}", flagName);
             }
         });
 
