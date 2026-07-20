@@ -624,17 +624,33 @@ static __int64 __fastcall HkCompose(__int64 a1, __int64 a2, __int64 a3) {
 
 static void TryInstallCompendiumHook() {
     if (s_ComposeInstalled.exchange(true)) return;
-    uintptr_t target = 0x140BB3AA0;
-    uint64_t orig = 0;
-    auto det = std::make_unique<PLH::x64Detour>(target, reinterpret_cast<uint64_t>(PLH::FnCast(HkCompose, &s_ComposeOrig)), &orig);
+
+    auto* Fn = UObjectGlobals::FindObject<UFunction>(nullptr,
+        STR("/Script/Project.AUniteCharaPanelCtrlBase:CanBeSelectedAsSearchFusion"));
+    if (!Fn) Fn = UObjectGlobals::FindObject<UFunction>(nullptr,
+        STR("/Script/Project.UniteCharaPanelCtrlBase:CanBeSelectedAsSearchFusion"));
+    if (!Fn) { LOG("[FusionGating] compose: CanBeSelectedAsSearchFusion NOT FOUND"); s_ComposeInstalled.store(false); return; }
+    void* thunk = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(Fn->GetFunc()));
+    if (!thunk) { LOG("[FusionGating] compose: GetFunc() null"); s_ComposeInstalled.store(false); return; }
+    uintptr_t moduleBase = reinterpret_cast<uintptr_t>(thunk) - 0x140D5E440;
+
+    void* target = reinterpret_cast<void*>(moduleBase + 0x140BB3AA0);
+    if (target < (void*)0x140000000 || target > (void*)0x160000000) {
+        LOG("[FusionGating] compose method target {:p} out of range", target);
+        s_ComposeInstalled.store(false); return;
+    }
+
+    uint64_t targetAddr = reinterpret_cast<uint64_t>(target);
+    uint64_t origAddr = 0;
+    auto det = std::make_unique<PLH::x64Detour>(targetAddr, reinterpret_cast<uint64_t>(PLH::FnCast(HkCompose, &s_ComposeOrig)), &origAddr);
     if (!det->hook()) {
-        LOG("[FusionGating] compose x64Detour FAILED at {:p}", (void*)target);
+        LOG("[FusionGating] compose x64Detour FAILED at {:p}", target);
         s_ComposeInstalled.store(false);
         return;
     }
-    s_ComposeOrig = PLH::FnCast(orig, s_ComposeOrig);
+    s_ComposeOrig = PLH::FnCast(origAddr, s_ComposeOrig);
     s_ComposeDetour = std::move(det);
-    LOG("[FusionGating] compose hook installed: method={:p} orig={:p}", (void*)target, (void*)orig);
+    LOG("[FusionGating] compose hook installed: method={:p} orig={:p}", target, (void*)origAddr);
 }
 
 // ── Special-fusion displayed result array ──
