@@ -271,7 +271,8 @@ static void WriteSelectable(void* base, int i, int selOff, uint8_t val) {
 //              a1+1136.
 //   capOff   : offset (relative to arrOff) of the capacity dword (+12 standard).
 static void CompactGatedEntriesEx(__int64 a1, int arrOff, int countOff, int capOff,
-                                  int stride, int devidOff, const wchar_t* tag) {
+                                   int stride, int devidOff, const wchar_t* tag,
+                                   bool dropZero = false) {
     void* base = *reinterpret_cast<void**>(a1 + arrOff);
     int count = *reinterpret_cast<int*>(a1 + arrOff + countOff);
     int cap = *reinterpret_cast<int*>(a1 + arrOff + capOff);
@@ -283,9 +284,11 @@ static void CompactGatedEntriesEx(__int64 a1, int arrOff, int countOff, int capO
         uint16_t did = *reinterpret_cast<uint16_t*>(e + devidOff);
         int32 race = CachedRace((int32)did);
         bool gated = (did > 0 && race >= 0 && APState::FusionRaces::IsRaceGated(race));
-        if (gated) {
+        bool zero = (did == 0);
+        if (gated || (dropZero && zero)) {
             DiagOnce(std::wstring(tag) + STR(" removed devil=") + std::to_wstring((int)did)
-                + STR(" race=") + std::to_wstring(race));
+                + STR(" race=") + std::to_wstring(race)
+                + (zero && !gated ? STR(" (N/A result)") : STR("")));
             continue;
         }
         if (w != i) {
@@ -321,6 +324,9 @@ struct DiagHook {
     std::string Tag = "";
     bool IsDispatcher = false; // read mode byte at a1+1098
     bool DoGray = false;
+    bool DropZero = false;     // also drop entries whose result devil id is 0 (N/A / impossible fusion)
+    bool ForceValid = false;   // for surviving ungated results, force the validity byte (+20) to 1 so the
+                              // game's own "non-fusable" flag (sub_140BFD620) doesn't render them as N/A
 };
 static std::vector<DiagHook> s_Diag;
 
@@ -345,10 +351,43 @@ static char __fastcall HkDiagList(int idx, __int64 a1) {
             uint16_t did = *reinterpret_cast<uint16_t*>(e + h.DevidOff);
             uint8_t sel = *reinterpret_cast<uint8_t*>(e + h.selOffGray);
             msg += " [" + std::to_string(i) + ":d" + std::to_string(did)
-                 + ",s" + std::to_string(sel) + "]";
+                  + ",s" + std::to_string(sel) + "]";
         }
     }
     LOG("[FusionGating]{}", std::wstring(msg.begin(), msg.end()));
+    // Detailed full-entry dump for the dyad secondary builder so we can see why
+    // some (non-gated) results render as N/A placeholders.
+    if (h.Tag.find("DyadSec") != std::string::npos && base && count > 0 && count <= 4096) {
+        std::string dmp = "[DYAD_DETAIL] cap=" + std::to_string(cap) + " (r+0=ingA +34=ingB r4/16=res v20=valid s21=sel | src+0=ingA +2=ingB +12=res | race)";
+        int stride = h.Stride > 0 ? h.Stride : 48;
+        for (int i = 0; i < count && i < 12; ++i) {
+            uintptr_t e = (uintptr_t)base + stride * (uintptr_t)i;
+            uint16_t r0  = *reinterpret_cast<uint16_t*>(e + 0);  // first ingredient from result entry
+            uint16_t d4  = *reinterpret_cast<uint16_t*>(e + 4);
+            uint16_t d16 = *reinterpret_cast<uint16_t*>(e + 16);
+            uint8_t  valid = *reinterpret_cast<uint8_t*>(e + 20);
+            uint8_t  sel   = *reinterpret_cast<uint8_t*>(e + 21);
+            uint16_t r34 = *reinterpret_cast<uint16_t*>(e + 34); // second ingredient from result entry
+            int32 race = CachedRace((int32)d4);
+            // source array at a1+960, stride 32
+            void* sbase = *reinterpret_cast<void**>(a1 + 960);
+            int scount = *reinterpret_cast<int*>(a1 + 968);
+            std::string sval = "?";
+            if (sbase && i < scount) {
+                uintptr_t se = (uintptr_t)sbase + 32 * (uintptr_t)i;
+                uint16_t sd  = *reinterpret_cast<uint16_t*>(se + 12);
+                uint16_t sA  = *reinterpret_cast<uint16_t*>(se + 0);  // content at +0
+                uint16_t sB  = *reinterpret_cast<uint16_t*>(se + 2);  // content at +2
+                sval = "A" + std::to_string(sA) + "/B" + std::to_string(sB) + "/res" + std::to_string(sd);
+            }
+            dmp += " #" + std::to_string(i) + "("
+                 + "r0=" + std::to_string(r0) + ",r34=" + std::to_string(r34)
+                 + ",r4=" + std::to_string(d4) + ",r16=" + std::to_string(d16)
+                 + ",v" + std::to_string(valid) + ",s" + std::to_string(sel)
+                 + " r" + std::to_string(race) + "|" + sval + ")";
+        }
+        LOG("[FusionGating]{}", std::wstring(dmp.begin(), dmp.end()));
+    }
     return r;
 }
 
@@ -368,9 +407,35 @@ static inline void DoGrayCompact(DiagHook& h, __int64 a1) {
     uint64_t c = sCall.fetch_add(1, std::memory_order_relaxed);
     int pre1 = ArrCountEx(a1, h.ArrOff, h.CountOff, h.CapOff);
     int pre2 = h.ArrOff2 ? ArrCountEx(a1, h.ArrOff2, h.CountOff2, h.CapOff2) : -1;
-    CompactGatedEntriesEx(a1, h.ArrOff, h.CountOff, h.CapOff, h.Stride, h.DevidOff, STR("[REMOVE]"));
+    CompactGatedEntriesEx(a1, h.ArrOff, h.CountOff, h.CapOff, h.Stride, h.DevidOff, STR("[REMOVE]"), h.DropZero);
     if (h.ArrOff2 != 0)
-        CompactGatedEntriesEx(a1, h.ArrOff2, h.CountOff2, h.CapOff2, h.Stride2, h.DevidOff2, STR("[REMOVE]"));
+        CompactGatedEntriesEx(a1, h.ArrOff2, h.CountOff2, h.CapOff2, h.Stride2, h.DevidOff2, STR("[REMOVE]"), h.DropZero);
+    // For surviving (ungated, non-zero) results, the game may still flag the entry
+    // invalid via sub_140BFD620(result) -> entry+20 = 0 (renders as N/A placeholder).
+    // Re-enable the validity byte for ungated results so they display as proper fusions.
+    if (h.ForceValid) {
+        void* vbase = *reinterpret_cast<void**>(a1 + h.ArrOff);
+        int vcount = *reinterpret_cast<int*>(a1 + h.ArrOff + h.CountOff);
+        int vcap = *reinterpret_cast<int*>(a1 + h.ArrOff + h.CapOff);
+        int vstride = h.Stride > 0 ? h.Stride : 48;
+        if (vbase && vcount > 0 && vcap > 0 && vcount <= vcap && vcount <= 4096) {
+            int fixed = 0;
+            for (int i = 0; i < vcount; ++i) {
+                uintptr_t e = (uintptr_t)vbase + vstride * (uintptr_t)i;
+                uint16_t did = *reinterpret_cast<uint16_t*>(e + h.DevidOff);
+                int32 race = CachedRace((int32)did);
+                // If race is unknown (-1) the entry survived compaction (not known-gated),
+                // so treat it as potentially ungated and re-enable validity to clear the N/A.
+                bool likelyUngated = (did > 0 && (race < 0 || !APState::FusionRaces::IsRaceGated(race)));
+                if (likelyUngated && *(uint8_t*)(e + 20) == 0) {
+                    *reinterpret_cast<uint8_t*>(e + 20) = 1;
+                    ++fixed;
+                }
+            }
+            if (fixed > 0) DiagOnce(STR("[FORCEVALID] fixed ") + std::to_wstring(fixed)
+                + STR(" ungated results in ") + std::wstring(h.Tag.begin(), h.Tag.end()));
+        }
+    }
     if (h.Tag.find("Special") != std::string::npos && c < 3 && h.ArrOff2 != 0) {
         void* base = *reinterpret_cast<void**>(a1 + h.ArrOff2);
         int cnt = *reinterpret_cast<int*>(a1 + h.ArrOff2 + h.CountOff2);
@@ -426,10 +491,12 @@ static void TryInstallBuildHook() {
         uint64_t off; int arrOff; int countOff; int capOff; const char* tag;
         bool disp; bool gray; int selOff; int stride; int devidOff;
         int arrOff2; int countOff2; int capOff2; int stride2; int devidOff2;
+        bool dropZero = false;
+        bool forceValid = false;
     };
     Spec specs[] = {
-        { 0x140BB6460, 1216, 8, 12, "DyadSec(6460)", false, true,  20, 48, 4, 960, 8, 12, 32, 12 },  // dyad secondary: result+source(a1+960,str32,devid+12)
-        { 0x140BB6CF0, 1216, 8, 12, "RevSec(6cf0)",  false, true,  21, 48, 4, 0, 8, 12, 48, 4 },  // reverse secondary (gray)
+        { 0x140BB6460, 1216, 8, 12, "DyadSec(6460)", false, true,  20, 48, 4, 960, 8, 12, 32, 12, true, true },  // dyad secondary: drop gated + N/A results, force-valid ungated, lockstep result(1216)+source(960)
+        { 0x140BB6CF0, 1216, 8, 12, "RevSec(6cf0)",  false, true,  21, 48, 4, 0, 8, 12, 48, 4, true, true },  // reverse secondary: drop gated + N/A results, force-valid ungated
         { 0x140BB7950, 1200, 8, 12, "Special(7950)", false, false, 21, 48, 4, 0, 8, 12, 48, 4 },  // special: lockstep-compact group+display via CompactSpecialResultArrays (HkDiagTramp2). display[+0] is a group index, so both arrays must move together.
         { 0x140BB7500, 1216, 8, 12, "Disp(7500)",    true,  false, 21, 48, 4, 0, 8, 12, 48, 4 },  // dispatcher (mode byte@1098)
         { 0x140BB7570, 1024, 8, 12, "Dyprim(7570)",  false, true,  21,  4, 0, 0, 8, 12, 4, 0 },  // reverse-primary result list (gray)
@@ -448,6 +515,8 @@ static void TryInstallBuildHook() {
         dh.Stride = s.stride; dh.DevidOff = s.devidOff;
         dh.ArrOff2 = s.arrOff2; dh.CountOff2 = s.countOff2; dh.CapOff2 = s.capOff2;
         dh.Stride2 = s.stride2; dh.DevidOff2 = s.devidOff2;
+        dh.DropZero = s.dropZero;
+        dh.ForceValid = s.forceValid;
         uint64_t orig = 0;
         int idx = (int)s_Diag.size();
         s_Diag.push_back(std::move(dh));
