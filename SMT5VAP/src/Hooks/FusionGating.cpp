@@ -203,14 +203,21 @@ static TPredicate s_OrigPred = nullptr;
 static std::unique_ptr<PLH::x64Detour> s_PredDetour;
 static std::atomic<bool> s_Installed{false};
 
+// NOTE: This predicate is called for BOTH fusion RESULTS and fusion INGREDIENTS
+// (e.g. the special-fusion ingredient build loop in sub_140BB7950). Forcing
+// gated demons here would mark gated INGREDIENTS as owned/unfuseable -> they
+// render as placeholders on the secondary (recipe) screen, and would also block
+// the commit of an allowed special result. Result gating is handled reliably by
+// in-place array COMPACTION (which removes gated results from every result list),
+// so we deliberately DON'T force-gate here. We keep the hook installed only to
+// LOG gated hits; it otherwise passes the original decision through unchanged.
 static char __fastcall HkFusionPredicate(int devilId) {
     char orig = s_OrigPred(devilId);
     int32_t race = (devilId > 0) ? GetDevilRaceId(devilId) : -1;
     bool gated = (race >= 0 && APState::FusionRaces::IsRaceGated(race));
     if (gated) DiagOnce(STR("[GATE] sub_140AB6E40 devil=") + std::to_wstring(devilId)
         + STR(" race=") + std::to_wstring(race) + STR(" orig=") + std::to_wstring((int)orig)
-        + STR(" -> BLOCK(1)"));
-    if (gated) return 1; // force "cannot fuse"
+        + STR(" -> passthrough (gating handled by compaction)"));
     return orig;
 }
 
@@ -389,9 +396,10 @@ static inline void DoGrayCompact(DiagHook& h, __int64 a1) {
         LOG("[FusionGating]{}", dump);
     }
 }
+static void CompactSpecialResultArrays(__int64 a1); // fwd decl; defined later
 static char __fastcall HkDiagTramp0(__int64 a1) { char r = HkDiagList(0, a1); DoGrayCompact(s_Diag[0], a1); return r; }
 static char __fastcall HkDiagTramp1(__int64 a1) { char r = HkDiagList(1, a1); DoGrayCompact(s_Diag[1], a1); return r; }
-static char __fastcall HkDiagTramp2(__int64 a1) { char r = HkDiagList(2, a1); DoGrayCompact(s_Diag[2], a1); return r; }
+static char __fastcall HkDiagTramp2(__int64 a1) { char r = HkDiagList(2, a1); CompactSpecialResultArrays(a1); return r; }
 static char __fastcall HkDiagTramp3(__int64 a1) { char r = HkDiagList(3, a1); DoGrayCompact(s_Diag[3], a1); return r; }
 static char __fastcall HkDiagTramp4(__int64 a1) { char r = HkDiagList(4, a1); DoGrayCompact(s_Diag[4], a1); return r; }
 static char __fastcall HkDiagTramp5(__int64 a1) { char r = HkDiagList(5, a1); DoGrayCompact(s_Diag[5], a1); return r; }
@@ -422,7 +430,7 @@ static void TryInstallBuildHook() {
     Spec specs[] = {
         { 0x140BB6460, 1216, 8, 12, "DyadSec(6460)", false, true,  20, 48, 4, 960, 8, 12, 32, 12 },  // dyad secondary: result+source(a1+960,str32,devid+12)
         { 0x140BB6CF0, 1216, 8, 12, "RevSec(6cf0)",  false, true,  21, 48, 4, 0, 8, 12, 48, 4 },  // reverse secondary (gray)
-        { 0x140BB7950, 1200, 8, 12, "Special(7950)", false, true,  21, 48, 4, 1136, -4, 8, 48, 16 },  // special: flatten(a1+1200) + group src(a1+1136,count@a1+1132,devid+16)
+        { 0x140BB7950, 1200, 8, 12, "Special(7950)", false, false, 21, 48, 4, 0, 8, 12, 48, 4 },  // special: lockstep-compact group+display via CompactSpecialResultArrays (HkDiagTramp2). display[+0] is a group index, so both arrays must move together.
         { 0x140BB7500, 1216, 8, 12, "Disp(7500)",    true,  false, 21, 48, 4, 0, 8, 12, 48, 4 },  // dispatcher (mode byte@1098)
         { 0x140BB7570, 1024, 8, 12, "Dyprim(7570)",  false, true,  21,  4, 0, 0, 8, 12, 4, 0 },  // reverse-primary result list (gray)
         { 0x140BB7760, 1008, 8, 12, "RevSecPop(7760)",false,false, 21, 48, 4, 0, 8, 12, 48, 4 },  // reverse secondary populator
@@ -700,6 +708,65 @@ static int32_t __fastcall HkGetSpecialCount(UObject* Ctx, void* Parms) {
     return r;
 }
 
+// ── Special-fusion RESULT removal (group + displayed arrays, lockstep) ──
+// The special primary screen renders icons from the GROUP array (panel+1136):
+//   each group entry (stride 48) holds the result devil id at +16 and an inner
+//   ingredient TArray at +0 (+8 = count). The displayed list (panel+1200, stride
+//   48) entry at +0 stores the GROUP INDEX into panel+1136, and +4 the devil id.
+// Both arrays are 1:1 (display[i].groupIndex == i), so removing a gated group
+// entry requires removing the matching display entry AND rewriting its +0 index.
+// We compact BOTH arrays together so the gated RESULT (and its recipe) vanish
+// from the primary screen, while survivors keep correct indices.
+static void CompactSpecialResultArrays(__int64 a1) {
+    if (!IsEnabled()) return;
+    const int gOff = 1136, gCountOff = -4, gCapOff = 8, gStride = 48, gDevOff = 16;
+    const int dOff = 1200, dCountOff = 8, dCapOff = 12, dStride = 48;
+    void* gbase = *reinterpret_cast<void**>(a1 + gOff);
+    int gcount = *reinterpret_cast<int*>(a1 + gOff + gCountOff);
+    int gcap   = *reinterpret_cast<int*>(a1 + gOff + gCapOff);
+    void* dbase = *reinterpret_cast<void**>(a1 + dOff);
+    int dcount = *reinterpret_cast<int*>(a1 + dOff + dCountOff);
+    if (!gbase || gcount <= 0 || gcap <= 0 || gcount > gcap || gcount > 4096) return;
+    if (!dbase || dcount <= 0) return;
+    int w = 0;
+    for (int i = 0; i < gcount; ++i) {
+        uintptr_t ge = (uintptr_t)gbase + gStride * (uintptr_t)i;
+        uint16_t did = *reinterpret_cast<uint16_t*>(ge + gDevOff);
+        int32 race = CachedRace((int32)did);
+        bool gated = (did > 0 && race >= 0 && APState::FusionRaces::IsRaceGated(race));
+        if (gated) {
+            DiagOnce(STR("[SPECIAL_REMOVE] group devil=") + std::to_wstring((int)did)
+                + STR(" race=") + std::to_wstring(race));
+            continue;
+        }
+        if (w != i) {
+            std::memmove((void*)((uintptr_t)gbase + gStride * (uintptr_t)w), (void*)ge, (size_t)gStride);
+            if (i < dcount) {
+                uintptr_t de  = (uintptr_t)dbase + dStride * (uintptr_t)i;
+                uintptr_t dwe = (uintptr_t)dbase + dStride * (uintptr_t)w;
+                std::memmove((void*)dwe, (void*)de, (size_t)dStride);
+                *reinterpret_cast<int*>(dwe + 0) = w; // rewrite group index
+            }
+        }
+        ++w;
+    }
+    *reinterpret_cast<int*>(a1 + gOff + gCountOff) = w;
+    *reinterpret_cast<int*>(a1 + dOff + dCountOff) = w;
+    if (w != gcount)
+        LOG("[SPECIAL_COMPACT] removed {} special results ({}->{})", (int64_t)(gcount - w), (int64_t)gcount, (int64_t)w);
+    if (w != gcount && w > 0 && dbase) {
+        std::string msg = "[SPECIAL_AFTER] count=" + std::to_string(w) + ": ";
+        int show = (w < 6) ? w : 6;
+        for (int i = 0; i < show; ++i) {
+            uintptr_t e = (uintptr_t)dbase + dStride * (uintptr_t)i;
+            uint16_t did = *reinterpret_cast<uint16_t*>(e + 4);
+            int gi = *reinterpret_cast<int*>(e + 0);
+            msg += " [" + std::to_string(i) + ":d" + std::to_string(did) + ",g" + std::to_string(gi) + "]";
+        }
+        LOG("[SPECIAL_AFTER]{}", std::wstring(msg.begin(), msg.end()));
+    }
+}
+
 static void TryInstallSpecialGetterHook() {
     if (s_GetCountInstalled.exchange(true)) return;
     UFunction* Fn = nullptr;
@@ -737,7 +804,12 @@ void Setup() {
     TryInstallNativeHook();
     TryInstallBuildHook();
     TryInstallCompendiumHook();
-    TryInstallSpecialGetterHook();
+    // NOTE: TryInstallSpecialGetterHook() intentionally NOT installed.
+    // It resolved "GetSpecialFusionDevilCount" via GetFunc() but that thunk maps
+    // to GetSpecialFusionDevilCursorPosition (sub_140D61F40), so the hook was
+    // corrupting the cursor result and never compacting. The Special(7950)
+    // post-hook already compacts the displayed list (a1+1200) and updates its
+    // count (a1+1208), which every primary-screen accessor bounds-checks.
 
     LOG("[FusionGating] Setup complete");
 }
