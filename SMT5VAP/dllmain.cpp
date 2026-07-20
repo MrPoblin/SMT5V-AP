@@ -234,6 +234,7 @@ public:
         ItemBlocker::BlockItemId(661);
         APState::FusionRaces::Fill();
         APState::FusionRaces::SetRaceGated(3, false);
+        APState::FusionRaces::SetRaceGated(5, false);
 
         // Hooks
         GameState::SetupMapLoadHook();

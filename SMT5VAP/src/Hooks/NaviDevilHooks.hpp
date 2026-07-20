@@ -17,7 +17,7 @@ namespace NaviDevilHooks {
     // Hybrid: uses AddCheckCounter as trigger + filtered SetGimmickExist for IDs
     // Only fires when both fire on the same frame (eliminates map-load spam)
     // The Ids are unique per map
-    // Total number of locations (source: frontiernav.net)
+    // Total number of locations
     // Minato: 225
     // Shinagawa: 265
     // Chiyoda: 274

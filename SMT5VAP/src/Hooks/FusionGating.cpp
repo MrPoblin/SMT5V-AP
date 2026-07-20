@@ -724,52 +724,61 @@ static TCompose s_ComposeOrig = nullptr;
 static std::unique_ptr<PLH::x64Detour> s_ComposeDetour;
 static std::atomic<bool> s_ComposeInstalled{false};
 
-static void CompactArrayAt(__int64 arrPtr, int stride, int devidOff) {
-    if (!arrPtr) return;
-    void* base = *reinterpret_cast<void**>(arrPtr + 0);
-    int count = *reinterpret_cast<int*>(arrPtr + 8);
-    int cap = *reinterpret_cast<int*>(arrPtr + 12);
-    if (!base || count <= 0 || cap <= 0 || count > cap || count > 4096) return;
-    if (stride <= 0) stride = 48;
+// Lockstep-compact the dispatcher's compose output: sub_140BB3AA0 writes the
+// displayed result list (a2, stride 48, devil id @ +4) 1:1 with the source list
+// (a3, stride 4, each entry a single devil id) — every display entry's +0 dword
+// IS the index into a3. Removing a gated entry must drop BOTH the display entry
+// and its source entry, and rewrite the surviving display entries' +0 to the new
+// (compacted) source index, otherwise the widget getters that dereference
+// source[display+0] (sub_140BBACD0 / sub_140BB5630) read a stale/wrong devil id
+// and render the slot as a placeholder. This mirrors CompactDyadResultArrays,
+// which already does this lockstep for the normal-dyad (6460) path.
+static void CompactComposeArrays(__int64 a2, __int64 a3) {
+    if (!a2 || !a3) return;
+    void* dbase = *reinterpret_cast<void**>(a2 + 0);
+    int dcount = *reinterpret_cast<int*>(a2 + 8);
+    int dcap   = *reinterpret_cast<int*>(a2 + 12);
+    void* sbase = *reinterpret_cast<void**>(a3 + 0);
+    int scount = *reinterpret_cast<int*>(a3 + 8);
+    int scap   = *reinterpret_cast<int*>(a3 + 12);
+    if (!dbase || !sbase) return;
+    if (dcount <= 0 || scount <= 0 || dcap <= 0 || scap <= 0) return;
+    if (dcount > scount) dcount = scount;   // 1:1 by construction
+    if (dcount > 4096) return;
     int w = 0;
-    for (int i = 0; i < count; ++i) {
-        uintptr_t e = reinterpret_cast<uintptr_t>(base) + stride * (uintptr_t)i;
-        uint16_t did = *reinterpret_cast<uint16_t*>(e + devidOff);
-        int32 race = CachedRace((int32)did);
-        bool gated = (did > 0 && race >= 0 && APState::FusionRaces::IsRaceGated(race));
-        // Special-fusion source array (a1+1136) is a 2-level grouped structure:
-        // group-container entries store a heap pointer at offset +0 (no devil id),
-        // with their gated children already removed. Drop those emptied containers
-        // too so the UI doesn't render them as placeholder slots.
-        uint64_t head = *reinterpret_cast<uint64_t*>(e + 0);
-        // Empty group-container entries (special fusion source) have no devil id
-        // at devidOff but a non-null pointer at +0 -> drop them so they don't
-        // render as placeholder slots.
-        bool emptyContainer = (did == 0 && head != 0);
-        if (gated || emptyContainer) {
-            DiagOnce(STR("[COMP_REMOVE] removed devil=") + std::to_wstring((int)did)
-                + STR(" race=") + std::to_wstring(race)
-                + (emptyContainer ? STR(" (empty-container)") : STR("")));
+    for (int i = 0; i < dcount; ++i) {
+        uintptr_t se = reinterpret_cast<uintptr_t>(sbase) + 4LL * (uintptr_t)i;
+        uint16_t sid = *reinterpret_cast<uint16_t*>(se);
+        int32 race = CachedRace((int32)sid);
+        bool gated = (sid > 0 && race >= 0 && APState::FusionRaces::IsRaceGated(race));
+        if (gated) {
+            DiagOnce(STR("[COMP_REMOVE] compose source devil=") + std::to_wstring((int)sid)
+                + STR(" race=") + std::to_wstring(race));
             continue;
         }
         if (w != i) {
-            std::memmove(reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(base) + stride * (uintptr_t)w),
-                         reinterpret_cast<void*>(e), (size_t)stride);
+            std::memmove(reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(dbase) + 48LL * (uintptr_t)w),
+                         reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(dbase) + 48LL * (uintptr_t)i),
+                         (size_t)48);
+            std::memmove(reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(sbase) + 4LL * (uintptr_t)w),
+                         reinterpret_cast<void*>(se), (size_t)4);
         }
+        // Rewrite the display entry's +0 source index to the compacted index.
+        *reinterpret_cast<int*>(reinterpret_cast<uintptr_t>(dbase) + 48LL * (uintptr_t)w + 0) = w;
         ++w;
     }
-    *reinterpret_cast<int*>(arrPtr + 8) = w;
-    if (count != w && (count - w) > 0) {
-        LOG("[COMPACT] removed {} ({}->{}) stride={} devidOff={}",
-            (int64_t)(count - w), (int64_t)count, (int64_t)w, (int64_t)stride, (int64_t)devidOff);
-    }
+    *reinterpret_cast<int*>(a2 + 8) = w;
+    *reinterpret_cast<int*>(a3 + 8) = w;
+    if (w != dcount)
+        LOG("[COMPACT] compose removed {} ({}->{}) lockstep", (int64_t)(dcount - w), (int64_t)dcount, (int64_t)w);
 }
 
 static __int64 __fastcall HkCompose(__int64 a1, __int64 a2, __int64 a3) {
     __int64 r = s_ComposeOrig(a1, a2, a3);
     if (IsEnabled()) {
-        if (a2) CompactArrayAt(a2, 48, 4);   // displayed result list
-        if (a3) CompactArrayAt(a3, 4, 0);     // source list (compendium reads this for display)
+        // Lockstep-compact display(a2=1200) + source(a3=1024/1056) so the
+        // display entry +0 source index stays correct after gated removal.
+        CompactComposeArrays(a2, a3);
     }
     return r;
 }
