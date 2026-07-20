@@ -462,7 +462,8 @@ static inline void DoGrayCompact(DiagHook& h, __int64 a1) {
     }
 }
 static void CompactSpecialResultArrays(__int64 a1); // fwd decl; defined later
-static char __fastcall HkDiagTramp0(__int64 a1) { char r = HkDiagList(0, a1); DoGrayCompact(s_Diag[0], a1); return r; }
+static void CompactDyadResultArrays(__int64 a1);     // fwd decl; defined later
+static char __fastcall HkDiagTramp0(__int64 a1) { char r = HkDiagList(0, a1); CompactDyadResultArrays(a1); return r; }
 static char __fastcall HkDiagTramp1(__int64 a1) { char r = HkDiagList(1, a1); DoGrayCompact(s_Diag[1], a1); return r; }
 static char __fastcall HkDiagTramp2(__int64 a1) { char r = HkDiagList(2, a1); CompactSpecialResultArrays(a1); return r; }
 static char __fastcall HkDiagTramp3(__int64 a1) { char r = HkDiagList(3, a1); DoGrayCompact(s_Diag[3], a1); return r; }
@@ -495,7 +496,7 @@ static void TryInstallBuildHook() {
         bool forceValid = false;
     };
     Spec specs[] = {
-        { 0x140BB6460, 1216, 8, 12, "DyadSec(6460)", false, true,  20, 48, 4, 960, 8, 12, 32, 12, true, true },  // dyad secondary: drop gated + N/A results, force-valid ungated, lockstep result(1216)+source(960)
+        { 0x140BB6460, 1216, 8, 12, "DyadSec(6460)", false, false, 20, 48, 4, 960, 8, 12, 32, 12, true, true },  // dyad secondary: drop gated + N/A results, force-valid ungated, lockstep result(1216)+source(960)
         { 0x140BB6CF0, 1216, 8, 12, "RevSec(6cf0)",  false, true,  21, 48, 4, 0, 8, 12, 48, 4, true, true },  // reverse secondary: drop gated + N/A results, force-valid ungated
         { 0x140BB7950, 1200, 8, 12, "Special(7950)", false, false, 21, 48, 4, 0, 8, 12, 48, 4 },  // special: lockstep-compact group+display via CompactSpecialResultArrays (HkDiagTramp2). display[+0] is a group index, so both arrays must move together.
         { 0x140BB7500, 1216, 8, 12, "Disp(7500)",    true,  false, 21, 48, 4, 0, 8, 12, 48, 4 },  // dispatcher (mode byte@1098)
@@ -833,6 +834,62 @@ static void CompactSpecialResultArrays(__int64 a1) {
             msg += " [" + std::to_string(i) + ":d" + std::to_string(did) + ",g" + std::to_string(gi) + "]";
         }
         LOG("[SPECIAL_AFTER]{}", std::wstring(msg.begin(), msg.end()));
+    }
+}
+
+static void CompactDyadResultArrays(__int64 a1) {
+    if (!IsEnabled()) return;
+    const int rOff = 1216, rCountOff = 8, rCapOff = 12, rStride = 48, rDevOff = 4;
+    const int sOff = 960, sCountOff = 8, sCapOff = 12, sStride = 32;
+    void* rbase = *reinterpret_cast<void**>(a1 + rOff);
+    int rcount = *reinterpret_cast<int*>(a1 + rOff + rCountOff);
+    int rcap   = *reinterpret_cast<int*>(a1 + rOff + rCapOff);
+    void* sbase = *reinterpret_cast<void**>(a1 + sOff);
+    int scount = *reinterpret_cast<int*>(a1 + sOff + sCountOff);
+    if (!rbase || rcount <= 0 || rcap <= 0 || rcount > rcap || rcount > 4096) return;
+    if (!sbase || scount <= 0) return;
+    int w = 0;
+    for (int i = 0; i < rcount && i < scount; ++i) {
+        uintptr_t re = (uintptr_t)rbase + rStride * (uintptr_t)i;
+        uint16_t did = *reinterpret_cast<uint16_t*>(re + rDevOff);
+        int32 race = CachedRace((int32)did);
+        bool gated = (did > 0 && race >= 0 && APState::FusionRaces::IsRaceGated(race));
+        if (gated || did == 0) {
+            DiagOnce(STR("[DYAD_REMOVE] result devil=") + std::to_wstring((int)did)
+                + STR(" race=") + std::to_wstring(race)
+                + (did == 0 ? STR(" (N/A)") : STR("")));
+            continue;
+        }
+        if (w != i) {
+            std::memmove((void*)((uintptr_t)rbase + rStride * (uintptr_t)w), (void*)re, (size_t)rStride);
+            uintptr_t se  = (uintptr_t)sbase + sStride * (uintptr_t)i;
+            uintptr_t swe = (uintptr_t)sbase + sStride * (uintptr_t)w;
+            std::memmove((void*)swe, (void*)se, (size_t)sStride);
+        }
+        // Fix the source index so the ingredient getter (sub_140BB54B0) finds the right source entry
+        uintptr_t rwe = (uintptr_t)rbase + rStride * (uintptr_t)w;
+        *reinterpret_cast<int*>(rwe + 0) = w;
+        ++w;
+    }
+    *reinterpret_cast<int*>(a1 + rOff + rCountOff) = w;
+    *reinterpret_cast<int*>(a1 + sOff + sCountOff) = w;
+    if (w != rcount)
+        LOG("[DYAD_COMPACT] removed {} dyad results ({}->{})", (int64_t)(rcount - w), (int64_t)rcount, (int64_t)w);
+    // ForceValid: for surviving ungated results, force the validity byte at +20
+    if (w > 0) {
+        int fixed = 0;
+        for (int i = 0; i < w; ++i) {
+            uintptr_t e = (uintptr_t)rbase + rStride * (uintptr_t)i;
+            uint16_t d = *reinterpret_cast<uint16_t*>(e + rDevOff);
+            int32 r = CachedRace((int32)d);
+            bool likelyUngated = (d > 0 && (r < 0 || !APState::FusionRaces::IsRaceGated(r)));
+            if (likelyUngated && *(uint8_t*)(e + 20) == 0) {
+                *reinterpret_cast<uint8_t*>(e + 20) = 1;
+                ++fixed;
+            }
+        }
+        if (fixed > 0)
+            LOG("[DYAD_FORCEVALID] fixed {} ungated results", fixed);
     }
 }
 
