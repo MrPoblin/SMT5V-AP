@@ -233,6 +233,40 @@ static char __fastcall HkFusionPredicate(int devilId) {
 // result at the DATA level (the game then binds it grayed and refuses confirm),
 // so it survives scrolling with no per-frame widget work and no reflection.
 static std::atomic<bool> s_BuildInstalled{false};
+static std::atomic<bool> s_Bfd620Installed{false};
+static thread_local bool s_BypassBfd620 = false;
+using TBfd620 = char(__fastcall*)(unsigned int);
+static TBfd620 s_OrigBfd620 = nullptr;
+static std::unique_ptr<PLH::x64Detour> s_Bfd620Detour;
+
+// Bypass sub_140BFD620 (demon-available-for-fusion check) when called from
+// within RevSecPop(7760). The populator's inner loop calls this to check each
+// compendium demon, but it fails because the race-availability global table
+// returns 0 for all demons in mode=2. We force it to return 1 so the populator
+// builds the work list; gated RESULTS are removed by display compaction.
+static char __fastcall HkBfd620(unsigned int a1) {
+    if (IsEnabled() && s_BypassBfd620) {
+        if (a1 >= 1 && a1 <= 1200) return 1;
+    }
+    return s_OrigBfd620(a1);
+}
+
+// Standalone 2-arg hook for RevSecPop(7760) – preserves RDX (source devil ID)
+// that the generic 1-arg trampoline would lose. Sets the Bfd620 bypass flag so
+// the inner loop's sub_140BFD620 check returns 1 for all compendium demons.
+using TRevSecPop = char(__fastcall*)(__int64, unsigned int);
+static TRevSecPop s_OrigRevSecPop = nullptr;
+static std::unique_ptr<PLH::x64Detour> s_RevSecPopDetour;
+static char __fastcall HkRevSecPop7760(__int64 a1, unsigned int a2) {
+    s_BypassBfd620 = true;
+    char r = s_OrigRevSecPop(a1, a2);
+    s_BypassBfd620 = false;
+    int count = *reinterpret_cast<int*>(a1 + 1016);
+    int cap = *reinterpret_cast<int*>(a1 + 1020);
+    if (count < 30)
+        LOG("[FusionGating][2ARG] RevSecPop(7760) a2={} count={} cap={}", a2, count, cap);
+    return r;
+}
 
 struct ResultEntryView {
     bool valid = false;
@@ -469,9 +503,8 @@ static char __fastcall HkDiagTramp2(__int64 a1) { char r = HkDiagList(2, a1); Co
 static char __fastcall HkDiagTramp3(__int64 a1) { char r = HkDiagList(3, a1); DoGrayCompact(s_Diag[3], a1); return r; }
 static char __fastcall HkDiagTramp4(__int64 a1) { char r = HkDiagList(4, a1); DoGrayCompact(s_Diag[4], a1); return r; }
 static char __fastcall HkDiagTramp5(__int64 a1) { char r = HkDiagList(5, a1); DoGrayCompact(s_Diag[5], a1); return r; }
-static char __fastcall HkDiagTramp6(__int64 a1) { char r = HkDiagList(6, a1); DoGrayCompact(s_Diag[6], a1); return r; }
 static char(__fastcall* HkDiagTramp[])(__int64) = {
-    HkDiagTramp0, HkDiagTramp1, HkDiagTramp2, HkDiagTramp3, HkDiagTramp4, HkDiagTramp5, HkDiagTramp6
+    HkDiagTramp0, HkDiagTramp1, HkDiagTramp2, HkDiagTramp3, HkDiagTramp4, HkDiagTramp5
 };
 
 static void TryInstallBuildHook() {
@@ -499,9 +532,8 @@ static void TryInstallBuildHook() {
         { 0x140BB6460, 1216, 8, 12, "DyadSec(6460)", false, false, 20, 48, 4, 960, 8, 12, 32, 12, true, true },  // dyad secondary: drop gated + N/A results, force-valid ungated, lockstep result(1216)+source(960)
         { 0x140BB6CF0, 1216, 8, 12, "RevSec(6cf0)",  false, true,  21, 48, 4, 0, 8, 12, 48, 4, true, true },  // reverse secondary: drop gated + N/A results, force-valid ungated
         { 0x140BB7950, 1200, 8, 12, "Special(7950)", false, false, 21, 48, 4, 0, 8, 12, 48, 4 },  // special: lockstep-compact group+display via CompactSpecialResultArrays (HkDiagTramp2). display[+0] is a group index, so both arrays must move together.
-        { 0x140BB7500, 1216, 8, 12, "Disp(7500)",    true,  false, 21, 48, 4, 0, 8, 12, 48, 4 },  // dispatcher (mode byte@1098)
+        { 0x140BB7500, 1200, 8, 12, "Disp(7500)",    true,  true, 21, 48, 4, 0, 8, 12, 48, 4, false, true },  // dispatcher (mode byte@1098): compact display at 1200 (used by dyad compendium & reverse secondary populator)
         { 0x140BB7570, 1024, 8, 12, "Dyprim(7570)",  false, true,  21,  4, 0, 0, 8, 12, 4, 0 },  // reverse-primary result list (gray)
-        { 0x140BB7760, 1008, 8, 12, "RevSecPop(7760)",false,false, 21, 48, 4, 0, 8, 12, 48, 4 },  // reverse secondary populator
         { 0x140BB8060, 1216, 8, 12, "RevPrim(8060)", false, true,  21, 48, 4, 0, 8, 12, 48, 4 },  // reverse result list (gray, if it fires)
     };
     s_Diag.clear();
@@ -536,8 +568,27 @@ static void TryInstallBuildHook() {
                 std::wstring(s.tag, s.tag + std::strlen(s.tag)), m, (void*)orig, s.gray);
         }
     }
-}
 
+    // Standalone 2-arg hook for RevSecPop(7760) – the generic 1-arg trampoline
+    // loses RDX (source devil ID), but this function needs both args.
+    {
+        void* m7760 = reinterpret_cast<void*>(moduleBase + 0x140BB7760);
+        if (m7760 >= (void*)0x140000000 && m7760 <= (void*)0x160000000) {
+            uint64_t orig7760 = 0;
+            auto det7760 = std::make_unique<PLH::x64Detour>(
+                reinterpret_cast<uint64_t>(m7760),
+                reinterpret_cast<uint64_t>(PLH::FnCast(HkRevSecPop7760, &s_OrigRevSecPop)),
+                &orig7760);
+            if (!det7760->hook()) {
+                LOG("[FusionGating] 2arg x64Detour FAILED at {:p} (RevSecPop(7760))", m7760);
+            } else {
+                s_OrigRevSecPop = PLH::FnCast(orig7760, s_OrigRevSecPop);
+                s_RevSecPopDetour = std::move(det7760);
+                LOG("[FusionGating] 2arg hook installed: RevSecPop(7760) method={:p} orig={:p}", m7760, (void*)orig7760);
+            }
+        }
+    }
+}
 
 
 static void TryInstallNativeHook() {
@@ -571,6 +622,29 @@ static void TryInstallNativeHook() {
     s_OrigPred = PLH::FnCast(origAddr, s_OrigPred);
     LOG("[FusionGating] Fusion predicate gate installed: method={:p} orig={:p}",
         method, (void*)origAddr);
+
+    // Install sub_140BFD620 bypass hook (used by RevSecPop compendium check)
+    if (!s_Bfd620Installed.exchange(true)) {
+        void* bfdMethod = reinterpret_cast<void*>(moduleBase + 0x140BFD620);
+        if (bfdMethod >= (void*)0x140000000 && bfdMethod <= (void*)0x160000000) {
+            uint64_t origBfd = 0;
+            s_Bfd620Detour = std::make_unique<PLH::x64Detour>(
+                reinterpret_cast<uint64_t>(bfdMethod),
+                reinterpret_cast<uint64_t>(PLH::FnCast(&HkBfd620, &s_OrigBfd620)),
+                &origBfd);
+            if (s_Bfd620Detour->hook()) {
+                s_OrigBfd620 = PLH::FnCast(origBfd, s_OrigBfd620);
+                LOG("[FusionGating] sub_140BFD620 hook installed at {:p}", bfdMethod);
+            } else {
+                LOG("[FusionGating] sub_140BFD620 hook FAILED at {:p}", bfdMethod);
+                s_Bfd620Detour.reset();
+                s_Bfd620Installed.store(false);
+            }
+        } else {
+            LOG("[FusionGating] sub_140BFD620 method {:p} out of range", bfdMethod);
+            s_Bfd620Installed.store(false);
+        }
+    }
 }
 
 // (Reflection dump removed — it has served its purpose and was spamming the log.)
