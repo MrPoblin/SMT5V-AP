@@ -716,6 +716,15 @@ static void CompactSpecialResultArrays(__int64 a1) {
     }
     *reinterpret_cast<int*>(a1 + gOff + gCountOff) = w;
     *reinterpret_cast<int*>(a1 + dOff + dCountOff) = w;
+    // Zero out inner TArray headers in stale group entries (beyond new count) so
+    // that panel destruction -- if it iterates by capacity -- does NOT double-free
+    // the inner buffers that were memmove'd to earlier positions.
+    for (int z = w; z < gcount; ++z) {
+        uintptr_t ze = (uintptr_t)gbase + gStride * (uintptr_t)z;
+        *reinterpret_cast<void**>(ze + 0) = nullptr;
+        *reinterpret_cast<int*>(ze + 8) = 0;
+        *reinterpret_cast<int*>(ze + 12) = 0;
+    }
     if (w != gcount)
         LOG("[SPECIAL_COMPACT] removed {} special results ({}->{})", (int64_t)(gcount - w), (int64_t)gcount, (int64_t)w);
 }
