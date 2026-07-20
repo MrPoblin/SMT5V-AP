@@ -140,15 +140,6 @@ static int32 CallInt32Arg(UObject* Obj, const wchar_t* funcName, int32 arg) {
 }
 
 // ── Call an int32-index UFunction (no return), e.g. an unselectable setter ──
-static void CallVoidInt(UObject* Obj, const wchar_t* funcName, int32 index) {
-    if (!Obj) return;
-    UFunction* F = Obj->GetFunctionByName(funcName);
-    if (!F) F = Obj->GetFunctionByNameInChain(funcName);
-    if (!F) return;
-    struct { int32 InIndex; } p{ index };
-    Obj->ProcessEvent(F, &p);
-}
-
 // ── Read the result DevilID at an absolute list index ──
 static int32 GetResultDevilAt(UObject* Panel, UFunction* IdF, int32 absIndex) {
     if (!Panel || !IdF) return -1;
@@ -174,11 +165,6 @@ static bool IsGatedResult(UObject* Panel, UFunction* IdF, int32 absIndex) {
 //
 // We check whichever result list is currently populated (Search covers normal +
 // dyad reverse-search; Special covers the special-fusion result screen).
-static std::set<std::wstring> s_DiagSeen;
-static void DiagOnce(const std::wstring& key) {
-    if (s_DiagSeen.insert(key).second) LOG("[FusionGating][DIAG] {}", key);
-}
-
 // ── Layer C: native gate on the fusion result-validity predicate ──
 // Analysis (IDA): the function that actually decides whether a fusion RESULT
 // entry is selectable is sub_140BB6460 (CreateFusionResultEntryList). For each
@@ -212,13 +198,9 @@ static std::atomic<bool> s_Installed{false};
 // so we deliberately DON'T force-gate here. We keep the hook installed only to
 // LOG gated hits; it otherwise passes the original decision through unchanged.
 static char __fastcall HkFusionPredicate(int devilId) {
-    char orig = s_OrigPred(devilId);
-    int32_t race = (devilId > 0) ? GetDevilRaceId(devilId) : -1;
-    bool gated = (race >= 0 && APState::FusionRaces::IsRaceGated(race));
-    if (gated) DiagOnce(STR("[GATE] sub_140AB6E40 devil=") + std::to_wstring(devilId)
-        + STR(" race=") + std::to_wstring(race) + STR(" orig=") + std::to_wstring((int)orig)
-        + STR(" -> passthrough (gating handled by compaction)"));
-    return orig;
+    // Gate is applied via in-place array compaction (Compact* functions); the
+    // original predicate decision passes through unchanged.
+    return s_OrigPred(devilId);
 }
 
 // ── Layer D: native gray on the result-entry LIST builder ──
@@ -261,31 +243,7 @@ static char __fastcall HkRevSecPop7760(__int64 a1, unsigned int a2) {
     s_BypassBfd620 = true;
     char r = s_OrigRevSecPop(a1, a2);
     s_BypassBfd620 = false;
-    int count = *reinterpret_cast<int*>(a1 + 1016);
-    int cap = *reinterpret_cast<int*>(a1 + 1020);
-    if (count < 30)
-        LOG("[FusionGating][2ARG] RevSecPop(7760) a2={} count={} cap={}", a2, count, cap);
     return r;
-}
-
-struct ResultEntryView {
-    bool valid = false;
-    uint16_t devilId = 0;
-    bool sel = false;
-};
-
-static ResultEntryView ReadEntry(void* base, int i, int selOff) {
-    ResultEntryView v;
-    uintptr_t e = reinterpret_cast<uintptr_t>(base) + 48 * static_cast<uintptr_t>(i);
-    v.devilId = *reinterpret_cast<uint16_t*>(e + 4);
-    v.sel = (*reinterpret_cast<uint8_t*>(e + selOff)) != 0;
-    v.valid = true;
-    return v;
-}
-
-static void WriteSelectable(void* base, int i, int selOff, uint8_t val) {
-    uintptr_t e = reinterpret_cast<uintptr_t>(base) + 48 * static_cast<uintptr_t>(i);
-    *reinterpret_cast<uint8_t*>(e + selOff) = val;
 }
 
 // Gray entries of a fusion result array: base=*(a1+arrOff), count=*(a1+arrOff+8),
@@ -305,8 +263,7 @@ static void WriteSelectable(void* base, int i, int selOff, uint8_t val) {
 //              a1+1136.
 //   capOff   : offset (relative to arrOff) of the capacity dword (+12 standard).
 static void CompactGatedEntriesEx(__int64 a1, int arrOff, int countOff, int capOff,
-                                   int stride, int devidOff, const wchar_t* tag,
-                                   bool dropZero = false) {
+                                   int stride, int devidOff, bool dropZero = false) {
     void* base = *reinterpret_cast<void**>(a1 + arrOff);
     int count = *reinterpret_cast<int*>(a1 + arrOff + countOff);
     int cap = *reinterpret_cast<int*>(a1 + arrOff + capOff);
@@ -320,9 +277,6 @@ static void CompactGatedEntriesEx(__int64 a1, int arrOff, int countOff, int capO
         bool gated = (did > 0 && race >= 0 && APState::FusionRaces::IsRaceGated(race));
         bool zero = (did == 0);
         if (gated || (dropZero && zero)) {
-            DiagOnce(std::wstring(tag) + STR(" removed devil=") + std::to_wstring((int)did)
-                + STR(" race=") + std::to_wstring(race)
-                + (zero && !gated ? STR(" (N/A result)") : STR("")));
             continue;
         }
         if (w != i) {
@@ -332,9 +286,6 @@ static void CompactGatedEntriesEx(__int64 a1, int arrOff, int countOff, int capO
         ++w;
     }
     *reinterpret_cast<int*>(a1 + arrOff + countOff) = w;
-}
-static inline void CompactGatedEntries(__int64 a1, int arrOff, int stride, int devidOff, const wchar_t* tag) {
-    CompactGatedEntriesEx(a1, arrOff, 8, 12, stride, devidOff, tag);
 }
 
 // Diagnostic-only hook: logs the populated array shape (and the dispatcher mode
@@ -347,7 +298,6 @@ struct DiagHook {
     int ArrOff = 1216;
     int CountOff = 8;   // offset (rel to ArrOff) of count dword
     int CapOff = 12;    // offset (rel to ArrOff) of capacity dword
-    int selOffGray = 21;
     int Stride = 48;
     int DevidOff = 4;
     int ArrOff2 = 0;   // optional 2nd (source) array to compact
@@ -355,8 +305,7 @@ struct DiagHook {
     int CapOff2 = 12;
     int Stride2 = 48;
     int DevidOff2 = 4;
-    std::string Tag = "";
-    bool IsDispatcher = false; // read mode byte at a1+1098
+    std::wstring Tag = L"";
     bool DoGray = false;
     bool DropZero = false;     // also drop entries whose result devil id is 0 (N/A / impossible fusion)
     bool ForceValid = false;   // for surviving ungated results, force the validity byte (+20) to 1 so the
@@ -364,65 +313,11 @@ struct DiagHook {
 };
 static std::vector<DiagHook> s_Diag;
 
+// Trampoline helper: runs the original fusion-list builder. The actual gating
+// (compaction of gated results) runs afterwards in the per-index trampolines
+// below. Kept as a uniform hook target so every builder shares the machinery.
 static char __fastcall HkDiagList(int idx, __int64 a1) {
-    DiagHook& h = s_Diag[idx];
-    char r = h.Orig(a1);
-    static std::atomic<int> sCalls{0};
-    int n = sCalls.fetch_add(1, std::memory_order_relaxed) + 1;
-    if (n > 40) return r; // bound log volume
-    int mode = -1;
-    if (h.IsDispatcher) mode = *(uint8_t*)(a1 + 1098);
-    void* base = *reinterpret_cast<void**>(a1 + h.ArrOff);
-    int count = *reinterpret_cast<int*>(a1 + h.ArrOff + 8);
-    int cap = *reinterpret_cast<int*>(a1 + h.ArrOff + 12);
-    std::string msg = "[DIAG][" + h.Tag + "]";
-    if (h.IsDispatcher) msg += " mode=" + std::to_string(mode) + " ";
-    msg += "count=" + std::to_string(count) + " cap=" + std::to_string(cap);
-    if (base && count > 0 && count <= 4096) {
-        int stride = h.Stride > 0 ? h.Stride : 48;
-        for (int i = 0; i < count && i < 6; ++i) {
-            uintptr_t e = (uintptr_t)base + stride * (uintptr_t)i;
-            uint16_t did = *reinterpret_cast<uint16_t*>(e + h.DevidOff);
-            uint8_t sel = *reinterpret_cast<uint8_t*>(e + h.selOffGray);
-            msg += " [" + std::to_string(i) + ":d" + std::to_string(did)
-                  + ",s" + std::to_string(sel) + "]";
-        }
-    }
-    LOG("[FusionGating]{}", std::wstring(msg.begin(), msg.end()));
-    // Detailed full-entry dump for the dyad secondary builder so we can see why
-    // some (non-gated) results render as N/A placeholders.
-    if (h.Tag.find("DyadSec") != std::string::npos && base && count > 0 && count <= 4096) {
-        std::string dmp = "[DYAD_DETAIL] cap=" + std::to_string(cap) + " (r+0=ingA +34=ingB r4/16=res v20=valid s21=sel | src+0=ingA +2=ingB +12=res | race)";
-        int stride = h.Stride > 0 ? h.Stride : 48;
-        for (int i = 0; i < count && i < 12; ++i) {
-            uintptr_t e = (uintptr_t)base + stride * (uintptr_t)i;
-            uint16_t r0  = *reinterpret_cast<uint16_t*>(e + 0);  // first ingredient from result entry
-            uint16_t d4  = *reinterpret_cast<uint16_t*>(e + 4);
-            uint16_t d16 = *reinterpret_cast<uint16_t*>(e + 16);
-            uint8_t  valid = *reinterpret_cast<uint8_t*>(e + 20);
-            uint8_t  sel   = *reinterpret_cast<uint8_t*>(e + 21);
-            uint16_t r34 = *reinterpret_cast<uint16_t*>(e + 34); // second ingredient from result entry
-            int32 race = CachedRace((int32)d4);
-            // source array at a1+960, stride 32
-            void* sbase = *reinterpret_cast<void**>(a1 + 960);
-            int scount = *reinterpret_cast<int*>(a1 + 968);
-            std::string sval = "?";
-            if (sbase && i < scount) {
-                uintptr_t se = (uintptr_t)sbase + 32 * (uintptr_t)i;
-                uint16_t sd  = *reinterpret_cast<uint16_t*>(se + 12);
-                uint16_t sA  = *reinterpret_cast<uint16_t*>(se + 0);  // content at +0
-                uint16_t sB  = *reinterpret_cast<uint16_t*>(se + 2);  // content at +2
-                sval = "A" + std::to_string(sA) + "/B" + std::to_string(sB) + "/res" + std::to_string(sd);
-            }
-            dmp += " #" + std::to_string(i) + "("
-                 + "r0=" + std::to_string(r0) + ",r34=" + std::to_string(r34)
-                 + ",r4=" + std::to_string(d4) + ",r16=" + std::to_string(d16)
-                 + ",v" + std::to_string(valid) + ",s" + std::to_string(sel)
-                 + " r" + std::to_string(race) + "|" + sval + ")";
-        }
-        LOG("[FusionGating]{}", std::wstring(dmp.begin(), dmp.end()));
-    }
-    return r;
+    return s_Diag[idx].Orig(a1);
 }
 
 // Per-index trampolines. Each forwards to HkDiagList(idx) then optionally compacts.
@@ -432,18 +327,15 @@ static inline int ArrCountEx(__int64 a1, int off, int countOff, int capOff) {
     int cap = *reinterpret_cast<int*>(a1 + off + capOff);
     return (base && count >= 0 && count <= cap && count <= 4096) ? count : -1;
 }
-static inline int ArrCount(__int64 a1, int off) {
-    return ArrCountEx(a1, off, 8, 12);
-}
 static inline void DoGrayCompact(DiagHook& h, __int64 a1) {
     if (!h.DoGray || !IsEnabled()) return;
-    static std::atomic<uint64_t> sCall{0};
-    uint64_t c = sCall.fetch_add(1, std::memory_order_relaxed);
     int pre1 = ArrCountEx(a1, h.ArrOff, h.CountOff, h.CapOff);
-    int pre2 = h.ArrOff2 ? ArrCountEx(a1, h.ArrOff2, h.CountOff2, h.CapOff2) : -1;
-    CompactGatedEntriesEx(a1, h.ArrOff, h.CountOff, h.CapOff, h.Stride, h.DevidOff, STR("[REMOVE]"), h.DropZero);
+    CompactGatedEntriesEx(a1, h.ArrOff, h.CountOff, h.CapOff, h.Stride, h.DevidOff, h.DropZero);
     if (h.ArrOff2 != 0)
-        CompactGatedEntriesEx(a1, h.ArrOff2, h.CountOff2, h.CapOff2, h.Stride2, h.DevidOff2, STR("[REMOVE]"), h.DropZero);
+        CompactGatedEntriesEx(a1, h.ArrOff2, h.CountOff2, h.CapOff2, h.Stride2, h.DevidOff2, h.DropZero);
+    int post1 = ArrCountEx(a1, h.ArrOff, h.CountOff, h.CapOff);
+    if (pre1 > post1)
+        LOG("[FusionGating] {} removed {} gated result(s) ({}->{})", h.Tag, pre1 - post1, pre1, post1);
     // For surviving (ungated, non-zero) results, the game may still flag the entry
     // invalid via sub_140BFD620(result) -> entry+20 = 0 (renders as N/A placeholder).
     // Re-enable the validity byte for ungated results so they display as proper fusions.
@@ -466,33 +358,9 @@ static inline void DoGrayCompact(DiagHook& h, __int64 a1) {
                     ++fixed;
                 }
             }
-            if (fixed > 0) DiagOnce(STR("[FORCEVALID] fixed ") + std::to_wstring(fixed)
-                + STR(" ungated results in ") + std::wstring(h.Tag.begin(), h.Tag.end()));
+            if (fixed > 0)
+                LOG("[FusionGating] {} force-enabled {} ungated result(s)", h.Tag, fixed);
         }
-    }
-    if (h.Tag.find("Special") != std::string::npos && c < 3 && h.ArrOff2 != 0) {
-        void* base = *reinterpret_cast<void**>(a1 + h.ArrOff2);
-        int cnt = *reinterpret_cast<int*>(a1 + h.ArrOff2 + h.CountOff2);
-        std::wstring dump = L"SRC_FULL cnt=" + std::to_wstring(cnt) + L": ";
-        for (int i = 0; i < cnt && i < 40; ++i) {
-            uintptr_t e = (uintptr_t)base + h.Stride2 * (uintptr_t)i;
-            int q0 = *(int*)(e + 0);
-            int q4 = *(int*)(e + 4);
-            int q8 = *(int*)(e + 8);
-            int q12 = *(int*)(e + 12);
-            int q16 = *(int*)(e + 16);
-            int q20 = *(int*)(e + 20);
-            int q24 = *(int*)(e + 24);
-            int q28 = *(int*)(e + 28);
-            int q32 = *(int*)(e + 32);
-            int q36 = *(int*)(e + 36);
-            int q40 = *(int*)(e + 40);
-            dump += L"#" + std::to_wstring(i) + L"(" + std::to_wstring(q0) + L"," + std::to_wstring(q4) + L","
-                  + std::to_wstring(q8) + L"," + std::to_wstring(q12) + L"," + std::to_wstring(q16) + L","
-                  + std::to_wstring(q20) + L"," + std::to_wstring(q24) + L"," + std::to_wstring(q28) + L","
-                  + std::to_wstring(q32) + L"," + std::to_wstring(q36) + L"," + std::to_wstring(q40) + L") ";
-        }
-        LOG("[FusionGating]{}", dump);
     }
 }
 static void CompactSpecialResultArrays(__int64 a1); // fwd decl; defined later
@@ -544,7 +412,7 @@ static void TryInstallBuildHook() {
         }
         DiagHook dh;
         dh.ArrOff = s.arrOff; dh.CountOff = s.countOff; dh.CapOff = s.capOff;
-        dh.Tag = s.tag; dh.IsDispatcher = s.disp; dh.selOffGray = s.selOff;
+        dh.Tag = std::wstring(s.tag, s.tag + std::strlen(s.tag));
         dh.Stride = s.stride; dh.DevidOff = s.devidOff;
         dh.ArrOff2 = s.arrOff2; dh.CountOff2 = s.countOff2; dh.CapOff2 = s.capOff2;
         dh.Stride2 = s.stride2; dh.DevidOff2 = s.devidOff2;
@@ -649,59 +517,6 @@ static void TryInstallNativeHook() {
 
 // (Reflection dump removed — it has served its purpose and was spamming the log.)
 
-static bool GrayIfGatedSlot(UObject* Panel, int32 slot,
-                            const wchar_t* listName,
-                            const wchar_t* countFn, const wchar_t* idFn, const wchar_t* offsetFn) {
-    int32 count = CallInt32(Panel, countFn);
-    UFunction* IdF = Panel->GetFunctionByName(idFn);
-    if (!IdF) IdF = Panel->GetFunctionByNameInChain(idFn);
-    int32 offset = CallInt32(Panel, offsetFn);
-    int32 eff = (offset < 0) ? 0 : offset;
-    int32 absIndex = eff + slot;
-    int32 devil = (IdF && count > 0 && absIndex >= 0 && absIndex < count)
-                    ? GetResultDevilAt(Panel, IdF, absIndex) : -1;
-    int32 race = (devil > 0) ? GetDevilRaceId(devil) : -1;
-    DiagOnce(std::wstring(listName)
-        + STR(" slot=") + std::to_wstring(slot)
-        + STR(" count=") + std::to_wstring(count)
-        + STR(" off=") + std::to_wstring(offset)
-        + STR(" abs=") + std::to_wstring(absIndex)
-        + STR(" devil=") + std::to_wstring(devil)
-        + STR(" race=") + std::to_wstring(race)
-        + STR(" idF=") + (IdF ? STR("1") : STR("0")));
-    if (count <= 0 || !IdF) return false;
-    if (absIndex < 0 || absIndex >= count) return false;
-    if (race >= 0 && APState::FusionRaces::IsRaceGated(race)) {
-        CallVoidInt(Panel, STR("BIESetUniteCharaPanelUnselectablePanelOn"), slot);
-        DiagOnce(std::wstring(listName) + STR(" GRAYED slot=") + std::to_wstring(slot));
-        return true;
-    }
-    return false;
-}
-
-// Re-apply gray to a single visible slot across every known fusion result list.
-//
-// NOTE: The per-tick BIE-gray approach proved unstable (crashes in the fusion
-// menu during scroll/transitions) and did not reliably persist across scroll,
-// because the game rebinds list widgets at the UMG level without firing any
-// hookable UFunction. The reliable gate is the native predicate (Layer C), which
-// logically disables gated results. The widget-gray visual is left to a safer
-// mechanism (see Setup / future work) — for now this is disabled to keep the
-// menu stable.
-static void ReGraySlot(UObject* Panel, int32 slot) {
-    (void)Panel; (void)slot;
-    // Intentionally empty: BIE gray disabled pending a safe implementation.
-}
-
-// Re-gray every visible slot of the result lists. Called each tick while the
-// panel is open so the gray survives scrolling (the game rebinds list widgets
-// on scroll without firing any hookable UFunction).
-static void ReGrayAllVisible(UObject* Panel) {
-    if (!IsEnabled() || !Panel) return;
-    for (int32 slot = 0; slot < 16; ++slot) {
-        ReGraySlot(Panel, slot);
-    }
-}
 
 // ── Compendium reverse fusion list builder ──
 // sub_140BE95F0(__int64 a1, __int64 a2, int a3..a6) builds the compendium
@@ -752,8 +567,6 @@ static void CompactComposeArrays(__int64 a2, __int64 a3) {
         int32 race = CachedRace((int32)sid);
         bool gated = (sid > 0 && race >= 0 && APState::FusionRaces::IsRaceGated(race));
         if (gated) {
-            DiagOnce(STR("[COMP_REMOVE] compose source devil=") + std::to_wstring((int)sid)
-                + STR(" race=") + std::to_wstring(race));
             continue;
         }
         if (w != i) {
@@ -888,8 +701,6 @@ static void CompactSpecialResultArrays(__int64 a1) {
         int32 race = CachedRace((int32)did);
         bool gated = (did > 0 && race >= 0 && APState::FusionRaces::IsRaceGated(race));
         if (gated) {
-            DiagOnce(STR("[SPECIAL_REMOVE] group devil=") + std::to_wstring((int)did)
-                + STR(" race=") + std::to_wstring(race));
             continue;
         }
         if (w != i) {
@@ -907,17 +718,6 @@ static void CompactSpecialResultArrays(__int64 a1) {
     *reinterpret_cast<int*>(a1 + dOff + dCountOff) = w;
     if (w != gcount)
         LOG("[SPECIAL_COMPACT] removed {} special results ({}->{})", (int64_t)(gcount - w), (int64_t)gcount, (int64_t)w);
-    if (w != gcount && w > 0 && dbase) {
-        std::string msg = "[SPECIAL_AFTER] count=" + std::to_string(w) + ": ";
-        int show = (w < 6) ? w : 6;
-        for (int i = 0; i < show; ++i) {
-            uintptr_t e = (uintptr_t)dbase + dStride * (uintptr_t)i;
-            uint16_t did = *reinterpret_cast<uint16_t*>(e + 4);
-            int gi = *reinterpret_cast<int*>(e + 0);
-            msg += " [" + std::to_string(i) + ":d" + std::to_string(did) + ",g" + std::to_string(gi) + "]";
-        }
-        LOG("[SPECIAL_AFTER]{}", std::wstring(msg.begin(), msg.end()));
-    }
 }
 
 static void CompactDyadResultArrays(__int64 a1) {
@@ -938,9 +738,6 @@ static void CompactDyadResultArrays(__int64 a1) {
         int32 race = CachedRace((int32)did);
         bool gated = (did > 0 && race >= 0 && APState::FusionRaces::IsRaceGated(race));
         if (gated || did == 0) {
-            DiagOnce(STR("[DYAD_REMOVE] result devil=") + std::to_wstring((int)did)
-                + STR(" race=") + std::to_wstring(race)
-                + (did == 0 ? STR(" (N/A)") : STR("")));
             continue;
         }
         if (w != i) {
