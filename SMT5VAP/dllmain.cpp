@@ -23,6 +23,7 @@
 #include "src/Hooks/EssenceShopHooks.hpp"
 #include "src/Hooks/FusionGating.hpp"
 #include "src/Hooks/MiracleHook.hpp"
+#include "src/Hooks/AmalgamHooks.hpp"
 #include "src/Tick/LevelUpTick.hpp"
 #include "src/Tick/CompendiumTick.hpp"
 #include "src/Hooks/EventFlagHook.hpp"
@@ -195,16 +196,17 @@ public:
             ItemGet::GiveItem(109, 1);
             ItemGet::GiveItem(82, 1);
             ItemGet::GiveItem(83, 1);
+            ItemGet::GiveGlory(1);
+            ItemGet::GiveMacca(1);
             DEBUG("Sent debug items");
         }
         if (GetAsyncKeyState(VK_F5) & 1) {
-            ItemGet::GiveGlory(1);
-            ItemGet::GiveMacca(1);
-            DEBUG("Sent debug stuff");
+            APState::FusionRaces::SetRaceGated(3, false);
+            DEBUG("Ungated");
         }
         if (GetAsyncKeyState(VK_F6) & 1 && GameState::IsSaveLoaded()) {
-            DeathFunctions::KillLocalPlayer();
-            DEBUG("Manual death trigger");
+            APState::FusionRaces::SetRaceGated(3, true);
+            DEBUG("Gated");
         }
         if (GetAsyncKeyState(VK_F7) & 1) {
             static int NotificationCounter{ 0 };
@@ -216,10 +218,6 @@ public:
             GameState::UpdatePosition();
             DEBUG("X: {}, Y: {}, Z: {}", GameState::PosX(), GameState::PosY(), GameState::PosZ());
             DEBUG("Is in haunt: {}", GardenHauntHooks::IsInGardenLevel());
-        }
-        if (GetAsyncKeyState(VK_F9) & 1 && GameState::IsSaveLoaded()) {
-            ExpGive::GiveExpBundle(ExpGive::ExpTier::Medium);
-            DEBUG("Gave Medium EXP bundle (relative) to player + demons");
         }
     }
 
@@ -233,7 +231,6 @@ public:
         APState::Essences::AddEssence(528);
         ItemBlocker::BlockItemId(661);
         APState::FusionRaces::Fill();
-        APState::FusionRaces::SetRaceGated(3, false);
         APState::FusionRaces::SetRaceGated(5, false);
 
         // Hooks
@@ -269,6 +266,7 @@ public:
         AogamiHooks::SetReplaceItemId(0);
 
         DevilStatueHooks::Setup();
+        AmalgamHooks::Setup();
 
         EventFlagHook::Setup();
         EventFlags::Setup();
@@ -354,6 +352,10 @@ public:
         });
 
         DevilStatueHooks::OnDevilStatueCollected([](const RC::Unreal::FName& flagName) {
+            ;
+        });
+
+        AmalgamHooks::OnShinseiCollected([](std::int32_t shinseiId) {
             ;
         });
 
