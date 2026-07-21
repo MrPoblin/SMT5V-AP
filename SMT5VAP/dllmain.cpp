@@ -12,6 +12,7 @@
 #include "src/Hooks/GloryHooks.hpp"
 #include "src/Hooks/BattleHook.hpp"
 #include "src/Hooks/MimanHooks.hpp"
+#include "src/Debug/ShinseiSurvey.hpp"
 #include "src/Hooks/MimanRewardHooks.hpp"
 #include "src/Hooks/MissionHooks.hpp"
 #include "src/Hooks/AogamiHooks.hpp"
@@ -219,6 +220,9 @@ public:
             DEBUG("X: {}, Y: {}, Z: {}", GameState::PosX(), GameState::PosY(), GameState::PosZ());
             DEBUG("Is in haunt: {}", GardenHauntHooks::IsInGardenLevel());
         }
+        if (GetAsyncKeyState(VK_F9) & 1) {
+            ShinseiSurvey::RunSurvey();
+        }
     }
 
     auto on_unreal_init() -> void override
@@ -261,6 +265,7 @@ public:
 
         MimanHooks::Setup();
         MimanRewardHooks::Setup();
+        ShinseiSurvey::Setup();
 
         AogamiHooks::Setup();
         AogamiHooks::SetReplaceItemId(0);

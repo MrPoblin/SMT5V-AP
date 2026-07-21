@@ -36,7 +36,7 @@ target_link_libraries(${MOD_TARGET} PUBLIC UE4SS)
 # match the --config passed to `cmake --build` (Dev / Debug / Shipping / Test).
 set(SMT5V_OUTPUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../Output")
 target_link_libraries(${MOD_TARGET} PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/External/APCpp/lib/APCpp.lib
+    ${CMAKE_CURRENT_SOURCE_DIR}/External/APCpp/build/$<IF:$<CONFIG:Game__Debug__Win64>,Debug,Release>/APCpp.lib
     jsoncpp_static
     ${SMT5V_OUTPUT_DIR}/$<CONFIG>/lib/PolyHook_2.lib
     ${SMT5V_OUTPUT_DIR}/$<CONFIG>/lib/asmjit.lib
