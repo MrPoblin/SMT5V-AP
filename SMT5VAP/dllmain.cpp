@@ -13,6 +13,7 @@
 #include "src/Hooks/BattleHook.hpp"
 #include "src/Hooks/MimanHooks.hpp"
 #include "src/Debug/ShinseiSurvey.hpp"
+#include "src/Debug/StatueSurvey.hpp"
 #include "src/Hooks/MimanRewardHooks.hpp"
 #include "src/Hooks/MissionHooks.hpp"
 #include "src/Hooks/AogamiHooks.hpp"
@@ -223,6 +224,9 @@ public:
         if (GetAsyncKeyState(VK_F9) & 1) {
             ShinseiSurvey::RunSurvey();
         }
+        if (GetAsyncKeyState(VK_F10) & 1) {
+            StatueSurvey::RunSurvey();
+        }
     }
 
     auto on_unreal_init() -> void override
@@ -266,6 +270,7 @@ public:
         MimanHooks::Setup();
         MimanRewardHooks::Setup();
         ShinseiSurvey::Setup();
+        StatueSurvey::Setup();
 
         AogamiHooks::Setup();
         AogamiHooks::SetReplaceItemId(0);
