@@ -29,6 +29,7 @@
 #include "src/Tick/LevelUpTick.hpp"
 #include "src/Tick/CompendiumTick.hpp"
 #include "src/Hooks/EventFlagHook.hpp"
+#include "src/Debug/NoEncounterMode.hpp"
 #include "src/CustomPopups.hpp"
 #include "src/Items/ItemLimits.hpp"
 #include "src/Items/ItemGet.hpp"
@@ -56,6 +57,7 @@ private:
     char m_inputFlagName[256]{""};
     int m_inputFlagId{0};
     int m_inputMapEventId{0};
+    bool m_noEncounter{false};
 
     static StringType ToWide(const char* s) {
         StringType out;
@@ -135,6 +137,10 @@ public:
             }
 
             ImGui::Separator();
+            if (ImGui::Checkbox("No Encounter Mode", &mod->m_noEncounter)) {
+                NoEncounterMode::SetEnabled(mod->m_noEncounter);
+            }
+            ImGui::Separator();
             ImGui::Text("Map Event Flags (BPL_MapEventData)");
             ImGui::InputInt("Map Event ID", &mod->m_inputMapEventId);
             if (ImGui::Button("Set Start true"))
@@ -192,7 +198,7 @@ public:
             LevelUpTick::Poll();
         }
 
-        // For Debugging
+        // Debug tools
         if (GetAsyncKeyState(VK_F4) & 1 && !GameState::IsTransitioning()) {
             ItemGet::GiveItem(110, 1);
             ItemGet::GiveItem(109, 1);
@@ -221,12 +227,6 @@ public:
             DEBUG("X: {}, Y: {}, Z: {}", GameState::PosX(), GameState::PosY(), GameState::PosZ());
             DEBUG("Is in haunt: {}", GardenHauntHooks::IsInGardenLevel());
         }
-        if (GetAsyncKeyState(VK_F9) & 1) {
-            ShinseiSurvey::RunSurvey();
-        }
-        if (GetAsyncKeyState(VK_F10) & 1) {
-            StatueSurvey::RunSurvey();
-        }
     }
 
     auto on_unreal_init() -> void override
@@ -240,6 +240,7 @@ public:
         ItemBlocker::BlockItemId(661);
         APState::FusionRaces::Fill();
         APState::FusionRaces::SetRaceGated(5, false);
+        NoEncounterMode::SetEnabled(true);
 
         // Hooks
         GameState::SetupMapLoadHook();
@@ -269,8 +270,6 @@ public:
 
         MimanHooks::Setup();
         MimanRewardHooks::Setup();
-        ShinseiSurvey::Setup();
-        StatueSurvey::Setup();
 
         AogamiHooks::Setup();
         AogamiHooks::SetReplaceItemId(0);
@@ -303,6 +302,8 @@ public:
         CustomPopups::Setup();
 
         DeathFunctions::Setup();
+
+        NoEncounterMode::Setup();
 
         EssenceShopHooks::Setup();
 

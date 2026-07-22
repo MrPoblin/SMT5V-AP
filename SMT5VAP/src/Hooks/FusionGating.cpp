@@ -117,6 +117,76 @@ static int32 CachedRace(int32 devilId) {
     return s_RaceCache[devilId];
 }
 
+// ── Compendium registration check via BPL_BibleData:CheckBibleEntry ──
+static UFunction* s_CheckBibleEntry = nullptr;
+static UObject* s_BibleCDO = nullptr;
+static bool s_BibleInitFailed = false;
+
+static void InitBibleLookup() {
+    if (s_CheckBibleEntry || s_BibleInitFailed) return;
+
+    for (auto* p : {
+        STR("/Script/Project.BPL_BibleData:CheckBibleEntry"),
+        STR("/Script/Project.BPL_BibleData_C:CheckBibleEntry"),
+    }) {
+        s_CheckBibleEntry = UObjectGlobals::FindObject<UFunction>(nullptr, p);
+        if (s_CheckBibleEntry) break;
+    }
+    if (!s_CheckBibleEntry) { WARN("[FusionGating] BPL_BibleData:CheckBibleEntry NOT FOUND"); s_BibleInitFailed = true; return; }
+
+    for (auto* p : {
+        STR("/Script/Project.Default__BPL_BibleData"),
+        STR("/Script/Project.Default__BPL_BibleData_C"),
+    }) {
+        s_BibleCDO = UObjectGlobals::StaticFindObject_InternalSlow(nullptr, nullptr, p);
+        if (s_BibleCDO) break;
+    }
+    if (!s_BibleCDO) {
+        auto* cls = UObjectGlobals::FindObject<UClass>(nullptr, STR("/Script/Project.BPL_BibleData"));
+        if (!cls) cls = UObjectGlobals::FindObject<UClass>(nullptr, STR("/Script/Project.BPL_BibleData_C"));
+        if (cls) s_BibleCDO = cls->CreateDefaultObject();
+    }
+    if (!s_BibleCDO) { WARN("[FusionGating] BPL_BibleData CDO NOT FOUND"); s_BibleInitFailed = true; return; }
+
+    LOG("[FusionGating] Bible lookup ready");
+}
+
+static bool IsInCompendium(int32_t devilId) {
+    InitBibleLookup();
+    if (!s_CheckBibleEntry || !s_BibleCDO) return true;
+    struct { int32_t DevilID; bool ReturnValue; } params{ devilId, false };
+    s_BibleCDO->ProcessEvent(s_CheckBibleEntry, &params);
+    return params.ReturnValue;
+}
+
+// ── Compendium cache: precomputed after save data is available (not at Setup) ──
+static std::vector<bool> s_CompendiumCache;
+static bool s_CompendiumCacheReady = false;
+
+static void BuildCompendiumCache() {
+    if (s_CompendiumCacheReady) return;
+    InitBibleLookup();
+    s_CompendiumCache.assign(4096, false);
+    if (s_CheckBibleEntry && s_BibleCDO) {
+        int count = 0;
+        for (int id = 1; id < (int)s_CompendiumCache.size(); ++id) {
+            if (IsInCompendium(id)) {
+                s_CompendiumCache[id] = true;
+                ++count;
+            }
+        }
+        LOG("[FusionGating] Compendium cache built ({} registered)", count);
+    } else {
+        WARN("[FusionGating] Compendium cache NOT built (bible lookup unavailable)");
+    }
+    s_CompendiumCacheReady = true;
+}
+
+static bool CachedIsInCompendium(int32_t devilId) {
+    if (devilId <= 0 || (size_t)devilId >= s_CompendiumCache.size()) return true;
+    return s_CompendiumCache[devilId];
+}
+
 // ── Call a no-arg / simple UFunction on an object, read int32 ReturnValue ──
 [[maybe_unused]] static int32 CallInt32(UObject* Obj, const wchar_t* funcName) {
     if (!Obj) return -1;
@@ -228,7 +298,9 @@ static std::unique_ptr<PLH::x64Detour> s_Bfd620Detour;
 // builds the work list; gated RESULTS are removed by display compaction.
 static char __fastcall HkBfd620(unsigned int a1) {
     if (IsEnabled() && s_BypassBfd620) {
-        if (a1 >= 1 && a1 <= 1200) return 1;
+        if (a1 >= 1 && a1 <= 1200) {
+            return CachedIsInCompendium((int32)a1) ? 1 : 0;
+        }
     }
     return s_OrigBfd620(a1);
 }
@@ -240,6 +312,7 @@ using TRevSecPop = char(__fastcall*)(__int64, unsigned int);
 static TRevSecPop s_OrigRevSecPop = nullptr;
 static std::unique_ptr<PLH::x64Detour> s_RevSecPopDetour;
 static char __fastcall HkRevSecPop7760(__int64 a1, unsigned int a2) {
+    BuildCompendiumCache();
     s_BypassBfd620 = true;
     char r = s_OrigRevSecPop(a1, a2);
     s_BypassBfd620 = false;
@@ -401,8 +474,8 @@ static void TryInstallBuildHook() {
         { 0x140BB6CF0, 1216, 8, 12, "RevSec(6cf0)",  false, true,  21, 48, 4, 0, 8, 12, 48, 4, true, true },  // reverse secondary: drop gated + N/A results, force-valid ungated
         { 0x140BB7950, 1200, 8, 12, "Special(7950)", false, false, 21, 48, 4, 0, 8, 12, 48, 4 },  // special: lockstep-compact group+display via CompactSpecialResultArrays (HkDiagTramp2). display[+0] is a group index, so both arrays must move together.
         { 0x140BB7500, 1200, 8, 12, "Disp(7500)",    true,  true, 21, 48, 4, 0, 8, 12, 48, 4, false, true },  // dispatcher (mode byte@1098): compact display at 1200 (used by dyad compendium & reverse secondary populator)
-        { 0x140BB7570, 1024, 8, 12, "Dyprim(7570)",  false, true,  21,  4, 0, 0, 8, 12, 4, 0 },  // reverse-primary result list (gray)
-        { 0x140BB8060, 1216, 8, 12, "RevPrim(8060)", false, true,  21, 48, 4, 0, 8, 12, 48, 4 },  // reverse result list (gray, if it fires)
+        { 0x140BB7570, 1024, 8, 12, "RevPrim(7570)",  false, true,  21,  4, 0, 0, 8, 12, 4, 0 },  // reverse/compendium primary result list (gray)
+        { 0x140BB8060, 1216, 8, 12, "Essence(8060)", false, true,  21, 48, 4, 0, 8, 12, 48, 4 },  // essence fusion result list (gray, if it fires)
     };
     s_Diag.clear();
     for (auto& s : specs) {
@@ -583,13 +656,13 @@ static void CompactComposeArrays(__int64 a2, __int64 a3) {
     *reinterpret_cast<int*>(a2 + 8) = w;
     *reinterpret_cast<int*>(a3 + 8) = w;
     if (w != dcount)
-        LOG("[COMPACT] compose removed {} ({}->{}) lockstep", (int64_t)(dcount - w), (int64_t)dcount, (int64_t)w);
+        LOG("[COMPACT] compose removed {} ({}->{})", (int64_t)(dcount - w), (int64_t)dcount, (int64_t)w);
 }
 
 static __int64 __fastcall HkCompose(__int64 a1, __int64 a2, __int64 a3) {
     __int64 r = s_ComposeOrig(a1, a2, a3);
     if (IsEnabled()) {
-        // Lockstep-compact display(a2=1200) + source(a3=1024/1056) so the
+        // Lockstep-compact display(a2) + source(a3) so the
         // display entry +0 source index stays correct after gated removal.
         CompactComposeArrays(a2, a3);
     }
