@@ -36,6 +36,7 @@ std::string RaceName(int32_t race) {
 }
 
 static std::atomic<bool> s_Enabled{true};
+static std::atomic<bool> s_EssenceGatingEnabled{true};
 
 void SetEnabled(bool enabled) {
     s_Enabled.store(enabled, std::memory_order_release);
@@ -43,6 +44,13 @@ void SetEnabled(bool enabled) {
 }
 bool IsEnabled() {
     return s_Enabled.load(std::memory_order_acquire);
+}
+void SetEssenceGatingEnabled(bool enabled) {
+    s_EssenceGatingEnabled.store(enabled, std::memory_order_release);
+    LOG("[FusionGating] SetEssenceGatingEnabled({})", enabled);
+}
+bool IsEssenceGatingEnabled() {
+    return s_EssenceGatingEnabled.load(std::memory_order_acquire);
 }
 
 // ── Race lookup via BPL_DevilData:GetRaceIdByDevilId ──
@@ -443,7 +451,7 @@ static char __fastcall HkDiagTramp1(__int64 a1) { char r = HkDiagList(1, a1); Do
 static char __fastcall HkDiagTramp2(__int64 a1) { char r = HkDiagList(2, a1); CompactSpecialResultArrays(a1); return r; }
 static char __fastcall HkDiagTramp3(__int64 a1) { char r = HkDiagList(3, a1); DoGrayCompact(s_Diag[3], a1); return r; }
 static char __fastcall HkDiagTramp4(__int64 a1) { char r = HkDiagList(4, a1); DoGrayCompact(s_Diag[4], a1); return r; }
-static char __fastcall HkDiagTramp5(__int64 a1) { char r = HkDiagList(5, a1); DoGrayCompact(s_Diag[5], a1); return r; }
+static char __fastcall HkDiagTramp5(__int64 a1) { char r = HkDiagList(5, a1); if (IsEssenceGatingEnabled()) DoGrayCompact(s_Diag[5], a1); return r; }
 static char(__fastcall* HkDiagTramp[])(__int64) = {
     HkDiagTramp0, HkDiagTramp1, HkDiagTramp2, HkDiagTramp3, HkDiagTramp4, HkDiagTramp5
 };
@@ -662,8 +670,6 @@ static void CompactComposeArrays(__int64 a2, __int64 a3) {
 static __int64 __fastcall HkCompose(__int64 a1, __int64 a2, __int64 a3) {
     __int64 r = s_ComposeOrig(a1, a2, a3);
     if (IsEnabled()) {
-        // Lockstep-compact display(a2) + source(a3) so the
-        // display entry +0 source index stays correct after gated removal.
         CompactComposeArrays(a2, a3);
     }
     return r;

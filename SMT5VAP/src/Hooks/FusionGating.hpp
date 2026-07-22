@@ -14,6 +14,8 @@ namespace FusionGating {
     // Enable/disable the whole feature (used by AP slot data later).
     void SetEnabled(bool enabled);
     bool IsEnabled();
+    void SetEssenceGatingEnabled(bool enabled);
+    bool IsEssenceGatingEnabled();
 
     // Build/refresh the race-name table (cached once).
     std::string RaceName(int32_t race);

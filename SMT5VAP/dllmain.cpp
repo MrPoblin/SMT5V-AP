@@ -241,6 +241,7 @@ public:
         APState::FusionRaces::Fill();
         APState::FusionRaces::SetRaceGated(5, false);
         NoEncounterMode::SetEnabled(true);
+        FusionGating::SetEssenceGatingEnabled(false);
 
         // Hooks
         GameState::SetupMapLoadHook();
