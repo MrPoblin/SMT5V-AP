@@ -24,7 +24,7 @@
 #include "src/Hooks/SaveHooks.hpp"
 #include "src/Hooks/EssenceShopHooks.hpp"
 #include "src/Hooks/FusionGating.hpp"
-#include "src/Hooks/MiracleHook.hpp"
+#include "src/Hooks/MiracleHooks.hpp"
 #include "src/Hooks/AmalgamHooks.hpp"
 #include "src/Tick/LevelUpTick.hpp"
 #include "src/Tick/CompendiumTick.hpp"
@@ -76,6 +76,8 @@ public:
         register_tab(STR("Archipelago"), [](CppUserModBase* instance) {
             auto mod = dynamic_cast<SMT5VAP*>(instance);
             if (!mod) return;
+
+            ImGui::Text("Restart the game after completing a previous run");
 
             ImGui::InputText("Address and Port", mod->m_inputIP, IM_ARRAYSIZE(mod->m_inputIP));
             ImGui::InputText("Slot Name (Player)", mod->m_inputSlotName, IM_ARRAYSIZE(mod->m_inputSlotName));
@@ -209,12 +211,7 @@ public:
             DEBUG("Sent debug items");
         }
         if (GetAsyncKeyState(VK_F5) & 1) {
-            APState::FusionRaces::SetRaceGated(3, false);
-            DEBUG("Ungated");
-        }
-        if (GetAsyncKeyState(VK_F6) & 1 && GameState::IsSaveLoaded()) {
-            APState::FusionRaces::SetRaceGated(3, true);
-            DEBUG("Gated");
+            MiracleHooks::UnlockForPurchase(11);
         }
         if (GetAsyncKeyState(VK_F7) & 1) {
             static int NotificationCounter{ 0 };
@@ -308,9 +305,8 @@ public:
 
         EssenceShopHooks::Setup();
 
-
-        MiracleHook::Setup();
-        MiracleHook::SetBlockUnlocks(true);
+        MiracleHooks::Setup();
+        MiracleHooks::SetBlockUnlocks(true);
 
         // Callbacks
         GameState::OnSaveLoaded([](bool isLoaded) {

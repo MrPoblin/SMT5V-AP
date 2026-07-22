@@ -13,6 +13,13 @@ namespace APState {
         void Clear();
     }
 
+    namespace Miracles {
+        // AP-unlocked miracle skill IDs available for purchase
+        void Add(int32_t skillId);
+        bool Has(int32_t skillId);
+        void Clear();
+    }
+
     namespace FusionRaces {
         // Race gating state for Demon Fusion, driven by Archipelago data.
         // Race is an int32 index 0-49 (see RACE_ARRAY in FusionGating).

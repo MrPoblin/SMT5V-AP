@@ -30,6 +30,22 @@ namespace APState {
         }
     }
 
+    namespace Miracles {
+        static std::unordered_set<int32_t> MiracleList;
+
+        void Add(int32_t skillId) {
+            MiracleList.insert(skillId);
+        }
+
+        bool Has(int32_t skillId) {
+            return MiracleList.contains(skillId);
+        }
+
+        void Clear() {
+            MiracleList.clear();
+        }
+    }
+
     namespace FusionRaces {
         static constexpr int32_t RACE_COUNT = 50;
         static bool GatedRaces[RACE_COUNT]{};
