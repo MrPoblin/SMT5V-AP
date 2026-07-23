@@ -12,6 +12,8 @@ using namespace RC;
 using namespace RC::Unreal;
 
 namespace GloryHooks {
+    thread_local bool g_APInitiatedGlory = false;
+
     static std::vector<GloryCollectCallback> s_Callbacks;
     static std::mutex s_Mutex;
     static std::atomic<bool> s_BlockGlory{true};
@@ -40,18 +42,16 @@ namespace GloryHooks {
                     if (auto* P = ValProp->ContainerPtrToValuePtr<int32>(Ctx.TheStack.Locals())) {
                         val = *P;
                         if (val > 0 && s_BlockGlory) {
-                            // Values granted by Miman and Amalgams
-                            if (val == 5 || val == 6 || val == 8 || val == 10 || val == 50 || val == 60 || val == 80 || val == 100) {
-                                LOG("[Glory] Blocked value={}", val);
-                                *P = 0;
+                            if (g_APInitiatedGlory) {
+                                LOG("[Glory] Allowed AP glory value={}", val);
                             } else {
-                                LOG("[Glory] Allowed value={}", val);
+                                LOG("[Glory] Blocked native glory value={}", val);
+                                *P = 0;
                             }
                         }
                     }
                 }
-                // Fire callback for Amalgams
-                if (val == 50 || val == 60 || val == 80 || val == 100) {
+                if (val > 0) {
                     LOG("[Glory] AddGodParameterPoint Value={}", val);
                     std::lock_guard<std::mutex> L(s_Mutex);
                     for (auto& cb : s_Callbacks) cb(val);

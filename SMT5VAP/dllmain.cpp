@@ -26,6 +26,7 @@
 #include "src/Hooks/FusionGating.hpp"
 #include "src/Hooks/MiracleHooks.hpp"
 #include "src/Hooks/AmalgamHooks.hpp"
+#include "src/Hooks/UseItemHook.hpp"
 #include "src/Tick/LevelUpTick.hpp"
 #include "src/Tick/CompendiumTick.hpp"
 #include "src/Hooks/EventFlagHook.hpp"
@@ -282,6 +283,7 @@ public:
 
         DevilStatueHooks::Setup();
         AmalgamHooks::Setup();
+        UseItemHook::Setup();
 
         EventFlagHook::Setup();
         EventFlags::Setup();
@@ -372,6 +374,16 @@ public:
 
         AmalgamHooks::OnShinseiCollected([](std::int32_t shinseiId) {
             ;
+        });
+
+        UseItemHook::OnItemUsed([](std::int32_t itemId) {
+            if (itemId == 109) {
+                LOG("[ItemUse] Small Glory Crystal -> GiveGlory(10)");
+                ItemGet::GiveGlory(10);
+            } else if (itemId == 110) {
+                LOG("[ItemUse] Large Glory Crystal -> GiveGlory(100)");
+                ItemGet::GiveGlory(100);
+            }
         });
 
         NaviDevilHooks::OnNaviGimmickCollected([](std::int32_t saveId) {

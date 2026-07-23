@@ -1,6 +1,7 @@
 #include "ItemGet.hpp"
 #include "ItemBlocker.hpp"
 #include "MaccaBlocker.hpp"
+#include "src/Hooks/GloryHooks.hpp"
 #include "src/Log/Log.hpp"
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/UFunctionStructs.hpp>
@@ -64,8 +65,11 @@ namespace ItemGet {
         s_Glory.Init();
         if (!s_Glory.Func || !s_Glory.CDO) return;
 
+        bool prev = GloryHooks::g_APInitiatedGlory;
+        GloryHooks::g_APInitiatedGlory = true;
         struct { int32 Value; } params{amount};
         s_Glory.CDO->ProcessEvent(s_Glory.Func, &params);
+        GloryHooks::g_APInitiatedGlory = prev;
     }
 
     // ── GiveMacca ──
