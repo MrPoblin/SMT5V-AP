@@ -212,6 +212,9 @@ public:
         }
         if (GetAsyncKeyState(VK_F5) & 1) {
             MiracleHooks::UnlockForPurchase(11);
+            MiracleHooks::UnlockForPurchase(60);
+            MiracleHooks::GrantMiracle(60);
+
         }
         if (GetAsyncKeyState(VK_F7) & 1) {
             static int NotificationCounter{ 0 };
@@ -235,9 +238,8 @@ public:
         APState::Essences::AddEssence(544);
         APState::Essences::AddEssence(528);
         ItemBlocker::BlockItemId(661);
-        APState::FusionRaces::Fill();
-        APState::FusionRaces::SetRaceGated(5, false);
-        NoEncounterMode::SetEnabled(true);
+        //APState::FusionRaces::Fill();
+        //APState::FusionRaces::SetRaceGated(5, false);
         FusionGating::SetEssenceGatingEnabled(false);
 
         // Hooks
@@ -252,10 +254,16 @@ public:
         MaccaBlocker::SetBlockMacca(false);
 
         ChestHooks::Setup();
+        ChestHooks::SetEmptyAllChests(true);
+        ChestHooks::SetReplacementItem(70);
+        ChestHooks::SetReplacementAmount(0);
+        ChestHooks::SetReplacementMacca(0);
+        ChestHooks::SetExcludedChests({ 76, 77, 78, 79, 142, 231, 232, 233, 254 });
+
         RelicHooks::Setup();
 
         PopupSuppression::Setup();
-        PopupSuppression::SetBlockChests(true);
+        PopupSuppression::SetBlockChests(false);
         PopupSuppression::SetBlockRelics(true);
         PopupSuppression::SetBlockAogamiDebris(true);
 
@@ -322,7 +330,6 @@ public:
             }
             });
 
-        //Callback tests
         GameState::OnMapChanged([](const std::wstring& MapName) {
             CustomPopups::OnMapChanged();
         });
