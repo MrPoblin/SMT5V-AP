@@ -4,6 +4,15 @@
 #include <vector>
 
 namespace APState {
+
+    void ClearState();
+
+    namespace Locations {
+        void OnLocationChecked(int64_t locationId);
+        void Clear();
+        bool Contains(int64_t locationId);
+    }
+
     namespace Essences {
         // Tracked essence item IDs received from Archipelago
         void AddEssence(int32_t itemId);

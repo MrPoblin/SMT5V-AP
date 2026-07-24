@@ -1,5 +1,6 @@
 #include "src/Log/Log.hpp"
 #include "Archipelago.h" 
+#include "APState.hpp"
 #include <mutex>
 #include <queue>
 #include <cstdint>
@@ -21,9 +22,6 @@ namespace AP {
     static std::mutex PendingCheckMutex;
     static std::set<int64_t> PendingChecks;
 
-    static std::mutex CheckedLocationsMutex;
-    static std::unordered_set<int64_t> CheckedLocations;
-
     static std::atomic<bool> isAPConnected{ false };
 
 
@@ -41,33 +39,24 @@ namespace AP {
     }
 
     // APCpp thread
-	void OnItemReceived(int64_t itemId, bool notify)
-	{
+	void OnItemReceived(int64_t itemId, bool notify){
 		if (!notify) return;
 		QueueReceivedItem(itemId);
 		LOG("Received and queued item: {}", itemId);
 	}
 
-    // APCpp thread
-	void OnLocationChecked(int64_t locationId)
-	{
-        std::lock_guard lock(CheckedLocationsMutex);
-        CheckedLocations.insert(locationId);
-		LOG("Location in server checked: {}", locationId);
-	}
-
     void Shutdown() {
         AP_Shutdown();
-        CheckedLocations.clear();
+        APState::Locations::Clear();
     }
 
 	void APInitialize(const char* IP, const char* PlayerName, const char* Password) {
         Shutdown();
 		AP_Init(IP, GameName, PlayerName, Password);
 
-		AP_SetItemClearCallback([]() {});
+		AP_SetItemClearCallback(APState::ClearState);
 		AP_SetItemRecvCallback(OnItemReceived);
-		AP_SetLocationCheckedCallback(OnLocationChecked);
+		AP_SetLocationCheckedCallback(APState::Locations::OnLocationChecked);
 		AP_SetDeathLinkSupported(false); //TODO: Setup Death Link
 
 		AP_Start();
@@ -97,8 +86,7 @@ namespace AP {
     }
 
     void QueueSendCheck(int64_t checkId) {
-        std::lock_guard lock(CheckedLocationsMutex);
-        if (CheckedLocations.contains(checkId)) {
+        if (APState::Locations::Contains(checkId)) {
             LOG("Location {} already checked!", checkId);
             return;
         }
