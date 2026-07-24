@@ -24,6 +24,7 @@
 #include "src/Hooks/SaveHooks.hpp"
 #include "src/Hooks/EssenceShopHooks.hpp"
 #include "src/Hooks/FusionGating.hpp"
+#include "src/Hooks/FusionUnlock.hpp"
 #include "src/Hooks/MiracleHooks.hpp"
 #include "src/Hooks/AmalgamHooks.hpp"
 #include "src/Hooks/UseItemHook.hpp"
@@ -208,7 +209,7 @@ public:
             ItemGet::GiveItem(82, 1);
             ItemGet::GiveItem(83, 1);
             ItemGet::GiveGlory(1);
-            ItemGet::GiveMacca(1);
+            ItemGet::GiveMacca(100000);
             DEBUG("Sent debug items");
         }
         if (GetAsyncKeyState(VK_F5) & 1) {
@@ -239,8 +240,9 @@ public:
         APState::Essences::AddEssence(544);
         APState::Essences::AddEssence(528);
         ItemBlocker::BlockItemId(661);
-        //APState::FusionRaces::Fill();
-        //APState::FusionRaces::SetRaceGated(5, false);
+        APState::FusionRaces::Fill();
+        APState::FusionRaces::SetRaceGated(5, false);
+        APState::FusionRaces::SetRaceGated(3, false);
         FusionGating::SetEssenceGatingEnabled(false);
 
         // Hooks
@@ -317,6 +319,8 @@ public:
 
         MiracleHooks::Setup();
         MiracleHooks::SetBlockUnlocks(true);
+
+        FusionUnlock::Setup();
 
         // Callbacks
         GameState::OnSaveLoaded([](bool isLoaded) {
