@@ -240,9 +240,9 @@ public:
         APState::Essences::AddEssence(544);
         APState::Essences::AddEssence(528);
         ItemBlocker::BlockItemId(661);
-        APState::FusionRaces::Fill();
-        APState::FusionRaces::SetRaceGated(5, false);
-        APState::FusionRaces::SetRaceGated(3, false);
+        //APState::FusionRaces::Fill();
+        //APState::FusionRaces::SetRaceGated(5, false);
+        //APState::FusionRaces::SetRaceGated(3, false);
         FusionGating::SetEssenceGatingEnabled(false);
 
         // Hooks
