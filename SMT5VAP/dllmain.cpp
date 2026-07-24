@@ -8,7 +8,7 @@
 #include "src/GameState.hpp"
 #include "src/Hooks/PopupSuppression.hpp"
 #include "src/Hooks/ChestHooks.hpp"
-#include "src/Hooks/RelicHooks.hpp"
+#include "src/Hooks/VendingHooks.hpp"
 #include "src/Hooks/GloryHooks.hpp"
 #include "src/Hooks/BattleHook.hpp"
 #include "src/Hooks/MimanHooks.hpp"
@@ -263,11 +263,13 @@ public:
         ChestHooks::SetReplacementMacca(0);
         ChestHooks::SetExcludedChests({ 76, 77, 78, 79, 142, 231, 232, 233, 254 });
 
-        RelicHooks::Setup();
+        VendingHooks::Setup();
+        VendingHooks::SetReplacement(70, 0, 100);
+
 
         PopupSuppression::Setup();
         PopupSuppression::SetBlockChests(false);
-        PopupSuppression::SetBlockRelics(true);
+        PopupSuppression::SetBlockRelics(false);
         PopupSuppression::SetBlockAogamiDebris(true);
 
         BattleHook::Setup();
@@ -344,7 +346,7 @@ public:
             ;
         });
 
-        RelicHooks::OnRelicCollected([](std::int32_t relicId) {
+        VendingHooks::OnVendingCollected([](std::int32_t relicId) {
             ;
         });
 
