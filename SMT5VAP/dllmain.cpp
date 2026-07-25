@@ -31,6 +31,7 @@
 #include "src/Tick/LevelUpTick.hpp"
 #include "src/Tick/CompendiumTick.hpp"
 #include "src/Hooks/EventFlagHook.hpp"
+#include "src/Debug/DebugUI.hpp"
 #include "src/Debug/NoEncounterMode.hpp"
 #include "src/UI/ItemWindow.hpp"
 #include "src/UI/InfoWindow.hpp"
@@ -42,32 +43,17 @@
 #include "src/Functions/DeathFunctions.hpp"
 #include "src/Functions/EventFlags.hpp"
 #include "src/Functions/LevelFunctions.hpp"
+#include "src/Archipelago/APUI.hpp"
 #include "src/Archipelago/APManager.hpp"
 #include "src/Archipelago/APState.hpp"
 #include <UE4SSProgram.hpp>
 #include <Windows.h>
-#include <format>
 
 using namespace RC;
 using namespace RC::Unreal;
 
 class SMT5VAP : public RC::CppUserModBase
 {
-private:
-    char m_inputIP[256]{};
-    char m_inputSlotName[256]{};
-    char m_inputPassword[256]{""};
-    char m_inputFlagName[256]{""};
-    int m_inputFlagId{0};
-    int m_inputMapEventId{0};
-    bool m_noEncounter{false};
-
-    static StringType ToWide(const char* s) {
-        StringType out;
-        if (s) for (; *s; ++s) out.push_back(static_cast<wchar_t>(*s));
-        return out;
-    }
-
 public:
     SMT5VAP() : CppUserModBase()
     {
@@ -76,113 +62,9 @@ public:
         ModDescription = STR("An Archipelago integration mod for Shin Megami Tensei V:Vengeance");
         ModAuthors = STR("Poblin");
 
-        register_tab(STR("Archipelago"), [](CppUserModBase* instance) {
-            auto mod = dynamic_cast<SMT5VAP*>(instance);
-            if (!mod) return;
+        register_tab(STR("Archipelago"), RenderAPTab);
 
-            ImGui::Text("Restart the game after completing a previous run");
-
-            ImGui::InputText("Address and Port", mod->m_inputIP, IM_ARRAYSIZE(mod->m_inputIP));
-            ImGui::InputText("Slot Name (Player)", mod->m_inputSlotName, IM_ARRAYSIZE(mod->m_inputSlotName));
-            ImGui::InputText("Password", mod->m_inputPassword, IM_ARRAYSIZE(mod->m_inputPassword));
-
-            if (ImGui::Button("Connect"))
-            {
-                AP::APInitialize(mod->m_inputIP, mod->m_inputSlotName, mod->m_inputPassword);
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Disconnect"))
-            {
-                AP::Shutdown();
-            }
-            ImGui::Text(std::format("AP Status: {}", AP::getAPConnectedStatus()).c_str());
-            });
-
-        register_tab(STR("Debug"), [](CppUserModBase* instance) {
-            auto mod = dynamic_cast<SMT5VAP*>(instance);
-            if (!mod) return;
-
-            ImGui::InputText("Flag Name", mod->m_inputFlagName, IM_ARRAYSIZE(mod->m_inputFlagName));
-
-            StringType flagName = mod->ToWide(mod->m_inputFlagName);
-            if (ImGui::Button("Set true"))
-            {
-                EventFlags::Set(flagName, true);
-                LOG("[Debug] Set flag {} -> true", flagName);
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Set false"))
-            {
-                EventFlags::Set(flagName, false);
-                LOG("[Debug] Set flag {} -> false", flagName);
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Get"))
-            {
-                bool val = EventFlags::Get(flagName);
-                LOG("[Debug] Get flag {} -> {}", flagName, val ? STR("true") : STR("false"));
-            }
-
-            ImGui::Separator();
-            ImGui::InputInt("Flag ID", &mod->m_inputFlagId);
-            if (ImGui::Button("Set ID true"))
-            {
-                EventFlags::Set(mod->m_inputFlagId, true);
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Set ID false"))
-            {
-                EventFlags::Set(mod->m_inputFlagId, false);
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Get ID"))
-            {
-                bool val = EventFlags::Get(mod->m_inputFlagId);
-                LOG("[Debug] Get flag [{}] -> {}", mod->m_inputFlagId, val ? STR("true") : STR("false"));
-            }
-
-            ImGui::Separator();
-            if (ImGui::Checkbox("No Encounter Mode", &mod->m_noEncounter)) {
-                NoEncounterMode::SetEnabled(mod->m_noEncounter);
-            }
-            ImGui::Separator();
-            ImGui::Text("Map Event Flags (BPL_MapEventData)");
-            ImGui::InputInt("Map Event ID", &mod->m_inputMapEventId);
-            if (ImGui::Button("Set Start true"))
-            {
-                EventFlags::SetMapEventStart(mod->m_inputMapEventId, true);
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Set Start false"))
-            {
-                EventFlags::SetMapEventStart(mod->m_inputMapEventId, false);
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Is Active?"))
-            {
-                bool val = EventFlags::IsMapEventActive(mod->m_inputMapEventId);
-                LOG("[Debug] Map event {} active -> {}", mod->m_inputMapEventId, val ? STR("true") : STR("false"));
-            }
-            if (ImGui::Button("Set End true"))
-            {
-                EventFlags::SetMapEventEnd(mod->m_inputMapEventId, true);
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Set End false"))
-            {
-                EventFlags::SetMapEventEnd(mod->m_inputMapEventId, false);
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Set After true"))
-            {
-                EventFlags::SetMapEventAfter(mod->m_inputMapEventId, true);
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Set After false"))
-            {
-                EventFlags::SetMapEventAfter(mod->m_inputMapEventId, false);
-            }
-            });
+        register_tab(STR("Debug"), RenderDebugTab);
     }
 
     ~SMT5VAP() override
