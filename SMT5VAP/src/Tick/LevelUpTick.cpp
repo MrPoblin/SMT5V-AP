@@ -1,18 +1,14 @@
 #include "LevelUpTick.hpp"
+#include "src/HookHelper.hpp"
 #include "src/Functions/LevelFunctions.hpp"
 #include "src/Log/Log.hpp"
 #include <mutex>
 #include <vector>
-#include <chrono>
 
 using namespace RC;
 using namespace RC::Unreal;
 
 namespace LevelUpTick {
-
-// ── Polling state (3s real-time interval, framerate-independent) ──
-static auto s_LastPollTime = std::chrono::steady_clock::now();
-static constexpr auto POLL_INTERVAL = std::chrono::seconds(3);
 
 // ── Callbacks ──
 static std::vector<LevelUpCallback> s_Callbacks;
@@ -22,6 +18,9 @@ static std::mutex s_Mutex;
 static int32 s_CachedLevel = -1;
 static bool s_LevelKnown = false;
 
+// Hook ID
+static CallbackId s_PostHookId = -1;
+
 static void Fire(int32 oldLevel, int32 newLevel) {
     LOG("[LevelUpTick] Protagonist levelled up: {} -> {} (gained {})",
         oldLevel, newLevel, newLevel - oldLevel);
@@ -29,35 +28,46 @@ static void Fire(int32 oldLevel, int32 newLevel) {
     for (auto& cb : s_Callbacks) cb(oldLevel, newLevel);
 }
 
-// Fires the callback at most once per level increase.
-static void DetectLevelChange(int32 level) {
-    if (level < 1) return;
+// Post-hook for GetPlayerLevel: fires when the returned level is higher
+// than our cached value. This catches level-ups from ANY source (battle,
+// items, quest rewards) because GetPlayerLevel is called every time the
+// UI or game logic needs the level.
+static void OnGetPlayerLevel(UnrealScriptFunctionCallableContext& Ctx, void*) {
+    int32 newLevel = -1;
+    if (auto* Result = static_cast<int32*>(Ctx.RESULT_DECL)) {
+        newLevel = *Result;
+    }
+    if (newLevel < 1) return;
+
     if (!s_LevelKnown) {
-        s_CachedLevel = level;
+        s_CachedLevel = newLevel;
         s_LevelKnown = true;
         return;
     }
-    if (level > s_CachedLevel) {
-        Fire(s_CachedLevel, level);
-        s_CachedLevel = level;
-    } else if (level < s_CachedLevel) {
-        // Level dropped (e.g. NG+ reset) — resync baseline, don't fire.
-        s_CachedLevel = level;
+
+    if (newLevel > s_CachedLevel) {
+        Fire(s_CachedLevel, newLevel);
+        s_CachedLevel = newLevel;
+    } else if (newLevel < s_CachedLevel) {
+        // Level dropped (NG+ reset, etc.) — resync, don't fire
+        s_CachedLevel = newLevel;
     }
 }
 
-// ── Detection ──
-// The protagonist's level is applied through a C++ path that bypasses any
-// UFunction hook, so we poll GetPlayerLevel each frame (from on_update). This
-// reliably catches every level-up (real battles, exp items, etc.) and computes
-// the gain from the before/after result.
-void Poll() {
-    // Real-time throttle (framerate-independent)
-    auto now = std::chrono::steady_clock::now();
-    if (now - s_LastPollTime < POLL_INTERVAL) return;
-    s_LastPollTime = now;
+void Setup() {
+    if (s_PostHookId != -1) return;
 
-    DetectLevelChange(LevelFunctions::GetProtagonistLevel());
+    LevelFunctions::Setup();
+
+    auto* Func = HookHelper::FindFunc(STR("/Script/Project.BPL_PartyData:GetPlayerLevel"));
+    if (!Func) Func = HookHelper::FindFunc(STR("/Script/Project.BPL_PartyData_C:GetPlayerLevel"));
+    if (!Func) {
+        WARN(STR("[LevelUpTick] BPL_PartyData:GetPlayerLevel NOT FOUND"));
+        return;
+    }
+
+    s_PostHookId = HookHelper::HookPost(STR("/Script/Project.BPL_PartyData:GetPlayerLevel"), OnGetPlayerLevel);
+    LOG(STR("[LevelUpTick] Hook installed on GetPlayerLevel (id={})"), s_PostHookId);
 }
 
 void OnLevelUp(LevelUpCallback cb) {

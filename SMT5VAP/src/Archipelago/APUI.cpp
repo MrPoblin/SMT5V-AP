@@ -1,4 +1,5 @@
 #include "APUI.hpp"
+#include "APManager.hpp"
 #include "Archipelago.h"
 #include <format>
 

@@ -1,4 +1,5 @@
 #include "FusionGating.hpp"
+#include "src/HookHelper.hpp"
 #include "src/Archipelago/APState.hpp"
 #include "src/Log/Log.hpp"
 #include <Unreal/UObjectGlobals.hpp>
@@ -458,39 +459,36 @@ static char(__fastcall* HkDiagTramp[])(__int64) = {
 
 static void TryInstallBuildHook() {
     if (s_BuildInstalled.exchange(true)) return;
-    auto* Fn = UObjectGlobals::FindObject<UFunction>(nullptr,
-        STR("/Script/Project.AUniteCharaPanelCtrlBase:CanBeSelectedAsSearchFusion"));
-    if (!Fn) Fn = UObjectGlobals::FindObject<UFunction>(nullptr,
-        STR("/Script/Project.UniteCharaPanelCtrlBase:CanBeSelectedAsSearchFusion"));
-    if (!Fn) { LOG("[FusionGating] UFunction CanBeSelectedAsSearchFusion NOT FOUND"); s_BuildInstalled.store(false); return; }
-    void* thunk = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(Fn->GetFunc()));
-    if (!thunk) { LOG("[FusionGating] GetFunc() null"); s_BuildInstalled.store(false); return; }
-    uintptr_t moduleBase = reinterpret_cast<uintptr_t>(thunk) - 0x140D5E440;
 
     // Hook every candidate fusion-list builder with a diagnostic trampoline.
     // arrOff = offset of the TArray (base ptr) in `this`.
     // countOff/capOff = dword offsets relative to arrOff (standard TArray: 8/12).
     struct Spec {
-        uint64_t off; int arrOff; int countOff; int capOff; const char* tag;
+        const char* sig; int arrOff; int countOff; int capOff; const char* tag;
         bool disp; bool gray; int selOff; int stride; int devidOff;
         int arrOff2; int countOff2; int capOff2; int stride2; int devidOff2;
         bool dropZero = false;
         bool forceValid = false;
     };
     Spec specs[] = {
-        { 0x140BB6460, 1216, 8, 12, "DyadSec(6460)", false, false, 20, 48, 4, 960, 8, 12, 32, 12, true, true },  // dyad secondary: drop gated + N/A results, force-valid ungated, lockstep result(1216)+source(960)
-        { 0x140BB6CF0, 1216, 8, 12, "RevSec(6cf0)",  false, true,  21, 48, 4, 0, 8, 12, 48, 4, true, true },  // reverse secondary: drop gated + N/A results, force-valid ungated
-        { 0x140BB7950, 1200, 8, 12, "Special(7950)", false, false, 21, 48, 4, 0, 8, 12, 48, 4 },  // special: lockstep-compact group+display via CompactSpecialResultArrays (HkDiagTramp2). display[+0] is a group index, so both arrays must move together.
-        { 0x140BB7500, 1200, 8, 12, "Disp(7500)",    true,  true, 21, 48, 4, 0, 8, 12, 48, 4, false, true },  // dispatcher (mode byte@1098): compact display at 1200 (used by dyad compendium & reverse secondary populator)
-        { 0x140BB7570, 1024, 8, 12, "RevPrim(7570)",  false, true,  21,  4, 0, 0, 8, 12, 4, 0 },  // reverse/compendium primary result list (gray)
-        { 0x140BB8060, 1216, 8, 12, "Essence(8060)", false, true,  21, 48, 4, 0, 8, 12, 48, 4 },  // essence fusion result list (gray, if it fires)
+        { "40 55 53 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 ? ? ? ? 48 81 EC D8 01 00 00 4C 8D A9",
+          1216, 8, 12, "DyadSec(6460)", false, false, 20, 48, 4, 960, 8, 12, 32, 12, true, true },
+        { "48 89 4C 24 ? 55 53 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 ? ? ? ? 48 81 EC 38 04 00 00",
+          1216, 8, 12, "RevSec(6cf0)",  false, true,  21, 48, 4, 0, 8, 12, 48, 4, true, true },
+        { "48 89 4C 24 ? 55 56 41 54 41 56 48 8D AC 24",
+          1200, 8, 12, "Special(7950)", false, false, 21, 48, 4, 0, 8, 12, 48, 4 },
+        { "40 53 48 83 EC 20 48 8B D9 48 89 4C 24 ? 0F B6 89",
+          1200, 8, 12, "Disp(7500)",    true,  true, 21, 48, 4, 0, 8, 12, 48, 4, false, true },
+        { "40 55 57 41 54 41 56 48 83 EC 28 48 8D B9",
+          1024, 8, 12, "RevPrim(7570)",  false, true,  21,  4, 0, 0, 8, 12, 4, 0 },
+        { "48 89 5C 24 ? 55 56 57 41 56 41 57 48 8D 6C 24 ? 48 81 EC 70 01 00 00 0F B7 B1",
+          1216, 8, 12, "Essence(8060)", false, true,  21, 48, 4, 0, 8, 12, 48, 4 },
     };
     s_Diag.clear();
     for (auto& s : specs) {
-        void* m = reinterpret_cast<void*>(moduleBase + s.off);
-        if (m < (void*)0x140000000 || m > (void*)0x160000000) {
-            LOG("[FusionGating] method {:p} out of range", m); continue;
-        }
+        uint64_t addr = SignatureScanner::FindPattern(s.sig);
+        if (!addr) { LOG("[FusionGating] signature not found: {}", std::wstring(s.tag, s.tag + std::strlen(s.tag))); continue; }
+        void* m = reinterpret_cast<void*>(addr);
         DiagHook dh;
         dh.ArrOff = s.arrOff; dh.CountOff = s.countOff; dh.CapOff = s.capOff;
         dh.Tag = std::wstring(s.tag, s.tag + std::strlen(s.tag));
@@ -521,19 +519,19 @@ static void TryInstallBuildHook() {
     // Standalone 2-arg hook for RevSecPop(7760) – the generic 1-arg trampoline
     // loses RDX (source devil ID), but this function needs both args.
     {
-        void* m7760 = reinterpret_cast<void*>(moduleBase + 0x140BB7760);
-        if (m7760 >= (void*)0x140000000 && m7760 <= (void*)0x160000000) {
+        uint64_t m7760 = SignatureScanner::FindPattern("40 53 55 41 56 41 57 48 83 EC 38 4C 8D B1");
+        if (m7760) {
             uint64_t orig7760 = 0;
             auto det7760 = std::make_unique<PLH::x64Detour>(
-                reinterpret_cast<uint64_t>(m7760),
+                m7760,
                 reinterpret_cast<uint64_t>(PLH::FnCast(HkRevSecPop7760, &s_OrigRevSecPop)),
                 &orig7760);
             if (!det7760->hook()) {
-                LOG("[FusionGating] 2arg x64Detour FAILED at {:p} (RevSecPop(7760))", m7760);
+                LOG("[FusionGating] 2arg x64Detour FAILED at {:p} (RevSecPop(7760))", (void*)m7760);
             } else {
                 s_OrigRevSecPop = PLH::FnCast(orig7760, s_OrigRevSecPop);
                 s_RevSecPopDetour = std::move(det7760);
-                LOG("[FusionGating] 2arg hook installed: RevSecPop(7760) method={:p} orig={:p}", m7760, (void*)orig7760);
+                LOG("[FusionGating] 2arg hook installed: RevSecPop(7760) method={:p} orig={:p}", (void*)m7760, (void*)orig7760);
             }
         }
     }
@@ -543,25 +541,16 @@ static void TryInstallBuildHook() {
 static void TryInstallNativeHook() {
     if (s_Installed.exchange(true)) return;
 
-    auto* Fn = UObjectGlobals::FindObject<UFunction>(nullptr,
-        STR("/Script/Project.AUniteCharaPanelCtrlBase:CanBeSelectedAsSearchFusion"));
-    if (!Fn) Fn = UObjectGlobals::FindObject<UFunction>(nullptr,
-        STR("/Script/Project.UniteCharaPanelCtrlBase:CanBeSelectedAsSearchFusion"));
-    if (!Fn) { LOG("[FusionGating] UFunction CanBeSelectedAsSearchFusion NOT FOUND"); s_Installed.store(false); return; }
-
-    void* thunk = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(Fn->GetFunc()));
-    if (!thunk) { LOG("[FusionGating] GetFunc() null"); s_Installed.store(false); return; }
-
-    uintptr_t moduleBase = reinterpret_cast<uintptr_t>(thunk) - 0x140D5E440;
-    void* method = reinterpret_cast<void*>(moduleBase + 0x14720D3F0);
-    if (method < (void*)0x140000000 || method > (void*)0x160000000) {
-        LOG("[FusionGating] predicate method {:p} out of range", method);
-        s_Installed.store(false); return;
-    }
+    // Hook sub_14720D3F0 (fusion result-validity predicate):
+    // Returns char (1=non-fusable) for a given devilId.
+    // We make it additively return 1 for gated-race demons.
+    uint64_t predAddr = SignatureScanner::FindPattern("48 89 5C 24 ? 48 89 74 24 ? 57 48 83 EC 20 89 CF");
+    if (!predAddr) { LOG("[FusionGating] predicate signature NOT FOUND"); s_Installed.store(false); return; }
+    void* method = reinterpret_cast<void*>(predAddr);
 
     uint64_t origAddr = 0;
     s_PredDetour = std::make_unique<PLH::x64Detour>(
-        reinterpret_cast<uint64_t>(method),
+        predAddr,
         reinterpret_cast<uint64_t>(PLH::FnCast(&HkFusionPredicate, &s_OrigPred)),
         &origAddr);
     if (!s_PredDetour->hook()) {
@@ -574,23 +563,23 @@ static void TryInstallNativeHook() {
 
     // Install sub_140BFD620 bypass hook (used by RevSecPop compendium check)
     if (!s_Bfd620Installed.exchange(true)) {
-        void* bfdMethod = reinterpret_cast<void*>(moduleBase + 0x140BFD620);
-        if (bfdMethod >= (void*)0x140000000 && bfdMethod <= (void*)0x160000000) {
+        uint64_t bfdAddr = SignatureScanner::FindPattern("E9 ? ? ? ? CC CC CC CC CC CC CC CC CC CC CC 48 83 EC 28 85 C9");
+        if (bfdAddr) {
             uint64_t origBfd = 0;
             s_Bfd620Detour = std::make_unique<PLH::x64Detour>(
-                reinterpret_cast<uint64_t>(bfdMethod),
+                bfdAddr,
                 reinterpret_cast<uint64_t>(PLH::FnCast(&HkBfd620, &s_OrigBfd620)),
                 &origBfd);
             if (s_Bfd620Detour->hook()) {
                 s_OrigBfd620 = PLH::FnCast(origBfd, s_OrigBfd620);
-                LOG("[FusionGating] sub_140BFD620 hook installed at {:p}", bfdMethod);
+                LOG("[FusionGating] sub_140BFD620 hook installed at {:p}", (void*)bfdAddr);
             } else {
-                LOG("[FusionGating] sub_140BFD620 hook FAILED at {:p}", bfdMethod);
+                LOG("[FusionGating] sub_140BFD620 hook FAILED at {:p}", (void*)bfdAddr);
                 s_Bfd620Detour.reset();
                 s_Bfd620Installed.store(false);
             }
         } else {
-            LOG("[FusionGating] sub_140BFD620 method {:p} out of range", bfdMethod);
+            LOG("[FusionGating] sub_140BFD620 signature NOT FOUND");
             s_Bfd620Installed.store(false);
         }
     }
@@ -678,33 +667,31 @@ static __int64 __fastcall HkCompose(__int64 a1, __int64 a2, __int64 a3) {
 static void TryInstallCompendiumHook() {
     if (s_ComposeInstalled.exchange(true)) return;
 
-    auto* Fn = UObjectGlobals::FindObject<UFunction>(nullptr,
-        STR("/Script/Project.AUniteCharaPanelCtrlBase:CanBeSelectedAsSearchFusion"));
-    if (!Fn) Fn = UObjectGlobals::FindObject<UFunction>(nullptr,
-        STR("/Script/Project.UniteCharaPanelCtrlBase:CanBeSelectedAsSearchFusion"));
-    if (!Fn) { LOG("[FusionGating] compose: CanBeSelectedAsSearchFusion NOT FOUND"); s_ComposeInstalled.store(false); return; }
-    void* thunk = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(Fn->GetFunc()));
-    if (!thunk) { LOG("[FusionGating] compose: GetFunc() null"); s_ComposeInstalled.store(false); return; }
-    uintptr_t moduleBase = reinterpret_cast<uintptr_t>(thunk) - 0x140D5E440;
+    uint64_t targetAddr = SignatureScanner::FindPattern("40 55 57 41 54 41 56 41 57 48 83 EC 60");
+    if (!targetAddr) { LOG("[FusionGating] compose signature NOT FOUND"); s_ComposeInstalled.store(false); return; }
 
-    void* target = reinterpret_cast<void*>(moduleBase + 0x140BB3AA0);
-    if (target < (void*)0x140000000 || target > (void*)0x160000000) {
-        LOG("[FusionGating] compose method target {:p} out of range", target);
-        s_ComposeInstalled.store(false); return;
-    }
-
-    uint64_t targetAddr = reinterpret_cast<uint64_t>(target);
     uint64_t origAddr = 0;
     auto det = std::make_unique<PLH::x64Detour>(targetAddr, reinterpret_cast<uint64_t>(PLH::FnCast(HkCompose, &s_ComposeOrig)), &origAddr);
     if (!det->hook()) {
-        LOG("[FusionGating] compose x64Detour FAILED at {:p}", target);
+        LOG("[FusionGating] compose x64Detour FAILED at {:p}", (void*)targetAddr);
         s_ComposeInstalled.store(false);
         return;
     }
     s_ComposeOrig = PLH::FnCast(origAddr, s_ComposeOrig);
     s_ComposeDetour = std::move(det);
-    LOG("[FusionGating] compose hook installed: method={:p} orig={:p}", target, (void*)origAddr);
+    LOG("[FusionGating] compose hook installed: method={:p} orig={:p}", (void*)targetAddr, (void*)origAddr);
 }
+
+// ── CustomProperty-based accessors for fusion panel arrays ──
+// These replace raw offset arithmetic with named field access.
+// Panel special result display TArray at +1200
+static PropertyArrayAccessor<uint8> s_SpecialResultArr(1200);
+// Panel special group TArray at +1136
+static PropertyArrayAccessor<uint8> s_SpecialGroupArr(1136);
+// Panel dyad result TArray at +1216
+static PropertyArrayAccessor<uint8> s_DyadResultArr(1216);
+// Panel dyad source TArray at +960
+static PropertyArrayAccessor<uint8> s_DyadSourceArr(960);
 
 // ── Special-fusion displayed result array ──
 // Builder sub_140BB7950 (Special(7950)) fills the displayed list into the
@@ -715,7 +702,6 @@ static void TryInstallCompendiumHook() {
 // (spec arrOff=1200) compacts the same array once at build time; this hook
 // re-asserts compaction (idempotent) and returns the authoritative count so
 // count/getter and ByIndex always agree.
-static const int kSpecialResultOff = 1200;   // TArray<result> in panel (the displayed list)
 static const int kSpecialStride = 48;        // stride in builder sub_140BB7950
 static const int kSpecialDevidOff = 4;       // DevilID dword within 48-byte entry
 
@@ -729,23 +715,22 @@ static int32_t __fastcall HkGetSpecialCount(UObject* Ctx, void* Parms) {
     if (!IsEnabled() || !Ctx) return r;
     // Compact the displayed member array; the widget will then read the new
     // (smaller) list. Return the post-compaction count so iteration is correct.
-    int64_t arrPtr = (int64_t)Ctx + kSpecialResultOff;
-    void* base = *reinterpret_cast<void**>(arrPtr + 0);
-    int count = *reinterpret_cast<int*>(arrPtr + 8);
-    int cap = *reinterpret_cast<int*>(arrPtr + 12);
+    void* base = s_SpecialResultArr.GetData(Ctx);
+    int count = s_SpecialResultArr.GetCount(Ctx);
+    int cap = s_SpecialResultArr.GetCapacity(Ctx);
     if (base && count > 0 && cap > 0 && count <= cap && count <= 4096) {
         int w = 0;
         for (int i = 0; i < count; ++i) {
             uintptr_t e = (uintptr_t)base + kSpecialStride * (uintptr_t)i;
             int did = *reinterpret_cast<int32_t*>(e + kSpecialDevidOff);
-            int race = CachedRace(did);
+            int32 race = CachedRace(did);
             bool gated = (did > 0 && race >= 0 && APState::FusionRaces::IsRaceGated(race));
             if (gated) continue;
             if (w != i) std::memmove((void*)((uintptr_t)base + kSpecialStride * (uintptr_t)w),
                                      (void*)e, (size_t)kSpecialStride);
             ++w;
         }
-        *reinterpret_cast<int*>(arrPtr + 8) = w;
+        s_SpecialResultArr.SetCount(Ctx, w);
         if (w != r) LOG(STR("[SPECIAL_FIX] count {}->{} (gated removed)"),
             (int64_t)r, (int64_t)w);
         r = w;
@@ -764,13 +749,15 @@ static int32_t __fastcall HkGetSpecialCount(UObject* Ctx, void* Parms) {
 // from the primary screen, while survivors keep correct indices.
 static void CompactSpecialResultArrays(__int64 a1) {
     if (!IsEnabled()) return;
+    // Group array has non-standard layout: count at a1+1132, base at a1+1136, cap at a1+1144
     const int gOff = 1136, gCountOff = -4, gCapOff = 8, gStride = 48, gDevOff = 16;
-    const int dOff = 1200, dCountOff = 8, dCapOff = 12, dStride = 48;
+    void* container = reinterpret_cast<void*>(a1);
+    const int dStride = 48;
     void* gbase = *reinterpret_cast<void**>(a1 + gOff);
     int gcount = *reinterpret_cast<int*>(a1 + gOff + gCountOff);
     int gcap   = *reinterpret_cast<int*>(a1 + gOff + gCapOff);
-    void* dbase = *reinterpret_cast<void**>(a1 + dOff);
-    int dcount = *reinterpret_cast<int*>(a1 + dOff + dCountOff);
+    void* dbase = s_SpecialResultArr.GetData(container);
+    int dcount = s_SpecialResultArr.GetCount(container);
     if (!gbase || gcount <= 0 || gcap <= 0 || gcount > gcap || gcount > 4096) return;
     if (!dbase || dcount <= 0) return;
     int w = 0;
@@ -794,7 +781,7 @@ static void CompactSpecialResultArrays(__int64 a1) {
         ++w;
     }
     *reinterpret_cast<int*>(a1 + gOff + gCountOff) = w;
-    *reinterpret_cast<int*>(a1 + dOff + dCountOff) = w;
+    s_SpecialResultArr.SetCount(container, w);
     // Zero out inner TArray headers in stale group entries (beyond new count) so
     // that panel destruction -- if it iterates by capacity -- does NOT double-free
     // the inner buffers that were memmove'd to earlier positions.
@@ -810,13 +797,14 @@ static void CompactSpecialResultArrays(__int64 a1) {
 
 static void CompactDyadResultArrays(__int64 a1) {
     if (!IsEnabled()) return;
-    const int rOff = 1216, rCountOff = 8, rCapOff = 12, rStride = 48, rDevOff = 4;
-    const int sOff = 960, sCountOff = 8, sCapOff = 12, sStride = 32;
-    void* rbase = *reinterpret_cast<void**>(a1 + rOff);
-    int rcount = *reinterpret_cast<int*>(a1 + rOff + rCountOff);
-    int rcap   = *reinterpret_cast<int*>(a1 + rOff + rCapOff);
-    void* sbase = *reinterpret_cast<void**>(a1 + sOff);
-    int scount = *reinterpret_cast<int*>(a1 + sOff + sCountOff);
+    void* container = reinterpret_cast<void*>(a1);
+    const int rStride = 48, rDevOff = 4;
+    const int sStride = 32;
+    void* rbase = s_DyadResultArr.GetData(container);
+    int rcount = s_DyadResultArr.GetCount(container);
+    int rcap   = s_DyadResultArr.GetCapacity(container);
+    void* sbase = s_DyadSourceArr.GetData(container);
+    int scount = s_DyadSourceArr.GetCount(container);
     if (!rbase || rcount <= 0 || rcap <= 0 || rcount > rcap || rcount > 4096) return;
     if (!sbase || scount <= 0) return;
     int w = 0;
@@ -839,8 +827,8 @@ static void CompactDyadResultArrays(__int64 a1) {
         *reinterpret_cast<int*>(rwe + 0) = w;
         ++w;
     }
-    *reinterpret_cast<int*>(a1 + rOff + rCountOff) = w;
-    *reinterpret_cast<int*>(a1 + sOff + sCountOff) = w;
+    s_DyadResultArr.SetCount(container, w);
+    s_DyadSourceArr.SetCount(container, w);
     if (w != rcount)
         LOG("[DYAD_COMPACT] removed {} dyad results ({}->{})", (int64_t)(rcount - w), (int64_t)rcount, (int64_t)w);
     // ForceValid: for surviving ungated results, force the validity byte at +20
@@ -848,7 +836,7 @@ static void CompactDyadResultArrays(__int64 a1) {
         int fixed = 0;
         for (int i = 0; i < w; ++i) {
             uintptr_t e = (uintptr_t)rbase + rStride * (uintptr_t)i;
-            uint16_t d = *reinterpret_cast<uint16_t*>(e + rDevOff);
+            uint16_t d = *reinterpret_cast<uint16_t*>(e + 4); // m_DevilID at +4
             int32 r = CachedRace((int32)d);
             bool likelyUngated = (d > 0 && (r < 0 || !APState::FusionRaces::IsRaceGated(r)));
             if (likelyUngated && *(uint8_t*)(e + 20) == 0) {

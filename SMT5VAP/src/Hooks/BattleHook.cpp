@@ -1,4 +1,5 @@
 #include "BattleHook.hpp"
+#include "src/HookHelper.hpp"
 #include "src/Log/Log.hpp"
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/UFunctionStructs.hpp>
@@ -44,47 +45,43 @@ static int32 ResolveHeroIndex(UObject* comp) {
     return params.ReturnValue;
 }
 
-// UBattleResult_C: m_ResultData at +0x0130
-//   FBtlResultData:
-//     TArray<int32> m_ItemID at +0x00 (absolute 0x0130)
-//     TArray<int32> m_ItemCnt at +0x10 (absolute 0x0140)
-static constexpr int32 kResultDataOffset  = 0x0130;
-
-// ABattleMain_C: m_EncountData at +0x0350 (inherited from ABattleMainWorkBase)
-// FBtlEncData layout (0x58 bytes):
-//   bool m_IsRoomBoss     at +0x10
-//   int32 m_EncID         at +0x14
-//   int32 m_EvtEncID      at +0x18
-// AActor* m_BossInstance  at +0x0EB0 (from ABattleMain_C)
-// FBtlEncData m_EncountData at +0x0350 (0x58 bytes):
-//   TArray<int32> m_EnemyIDArray at +0x48 (absolute 0x0398)
-static constexpr int32 kEncountDataOffset  = 0x0350;
-static constexpr int32 kEncIDOffset        = 0x14;
-static constexpr int32 kEvtEncIDOffset     = 0x18;
-static constexpr int32 kIsRoomBossOffset   = 0x10;
-static constexpr int32 kEnemyIDArrayOffset = 0x48;
-static constexpr int32 kOuterOffset       = 0x20;
-static constexpr int32 kBossInstanceOffset = 0x0EB0;
-
-// ABattleMainWorkBase:
-//   TArray<FBtlKillData> m_EnemyKillList at +0x0290
-//     FBtlKillData { int32 m_EnemyID; int32 m_KillCnt; } (0x8 bytes)
-static constexpr int32 kEnemyKillListOffset = 0x0290;
-
 // Defeated-enemy record (mirrors FBtlKillData from the dumped headers).
 struct FBtlKillData { int32 m_EnemyID; int32 m_KillCnt; };
 
+// ── CustomProperty-based field accessors for game structs ──
+//
+// UBattleResult_C: m_ResultData at +0x0130
+//   FBtlResultData:
+//     TArray<int32> m_ItemID  at +0x0130
+//     TArray<int32> m_ItemCnt at +0x0140
+static PropertyArrayAccessor<int32> s_ResultItemIDs(0x0130);
+static PropertyArrayAccessor<int32> s_ResultItemCnts(0x0140);
+
+// ABattleMain_C: FBtlEncData m_EncountData at +0x0350 (0x58 bytes):
+//   bool    m_IsRoomBoss   at +0x0360
+//   int32   m_EncID        at +0x0364
+//   int32   m_EvtEncID     at +0x0368
+//   TArray<int32> m_EnemyIDArray at +0x0398
+static PropertyField<bool>        s_IsRoomBoss(0x0360);
+static PropertyField<int32>       s_EncID(0x0364);
+static PropertyField<int32>       s_EvtEncID(0x0368);
+static PropertyArrayAccessor<int32> s_EnemyIDArray(0x0398);
+
+// AActor* m_BossInstance at +0x0EB0
+static PropertyField<UObject*>    s_BossInstance(0x0EB0);
+
+// TArray<FBtlKillData> m_EnemyKillList at +0x0290
+static PropertyArrayAccessor<FBtlKillData> s_EnemyKillList(0x0290);
+
+// UObject Outer pointer at +0x20 (from UObjectBase)
+static PropertyField<UObject*>    s_UObjectOuter(0x20);
+
 static void suppressItems(UObject* resultComp) {
-    uint8* base = reinterpret_cast<uint8*>(resultComp) + kResultDataOffset;
-
-    FScriptArray* itemIDs = reinterpret_cast<FScriptArray*>(base);
-    FScriptArray* itemCnts = reinterpret_cast<FScriptArray*>(base + 0x10);
-
-    int32 count = itemIDs->Num();
+    int32 count = s_ResultItemIDs.GetCount(resultComp);
     if (count <= 0) return;
 
-    int32* idData = static_cast<int32*>(itemIDs->GetData());
-    int32* cntData = static_cast<int32*>(itemCnts->GetData());
+    int32* idData = s_ResultItemIDs.GetData(resultComp);
+    int32* cntData = s_ResultItemCnts.GetData(resultComp);
 
     for (int32 i = 0; i < count; i++) {
         idData[i] = -1;
@@ -151,11 +148,10 @@ bool IsMitamaDevil(int32_t devilId) {
 // True if any enemy in the encounter belongs to the Mitama group.
 static bool IsMitamaBattle(UObject* outer) {
     if (!outer) return false;
-    uint8* bm = reinterpret_cast<uint8*>(outer);
-    FScriptArray* enemyIDs = reinterpret_cast<FScriptArray*>(bm + kEncountDataOffset + kEnemyIDArrayOffset);
-    if (!enemyIDs || enemyIDs->Num() <= 0) return false;
-    int32* ids = static_cast<int32*>(enemyIDs->GetData());
-    for (int32 i = 0; i < enemyIDs->Num(); i++) {
+    int32 count = s_EnemyIDArray.GetCount(outer);
+    if (count <= 0) return false;
+    int32* ids = s_EnemyIDArray.GetData(outer);
+    for (int32 i = 0; i < count; i++) {
         if (ids[i] != 0 && GetDevilGroup(ids[i]) == kMitamaGroup) {
             LOG("[BattleHook] Mitama battle detected (demon ID={})", ids[i]);
             return true;
@@ -181,25 +177,25 @@ void Setup() {
             auto* resultComp = Ctx.Context;
             if (!resultComp) return;
 
-            // Get the Outer (should be ABattleMain_C) via direct offset
-            UObject* outer = *reinterpret_cast<UObject**>(reinterpret_cast<uint8*>(resultComp) + kOuterOffset);
+            // Get the Outer (should be ABattleMain_C) via UObjectBase field
+            UObject* outer = s_UObjectOuter(resultComp);
+            if (!outer) return;
 
-            // Read encounter data from BattleMain
-            uint8* bm = reinterpret_cast<uint8*>(outer);
-            int32 encId     = *reinterpret_cast<int32*>(bm + kEncountDataOffset + kEncIDOffset);
-            int32 evtEncId  = *reinterpret_cast<int32*>(bm + kEncountDataOffset + kEvtEncIDOffset);
-            bool isRoomBoss = *reinterpret_cast<bool*>(bm + kEncountDataOffset + kIsRoomBossOffset);
-            UObject* bossInst = *reinterpret_cast<UObject**>(bm + kBossInstanceOffset);
+            // Read encounter data from BattleMain using named field accessors
+            int32 encId     = s_EncID(outer);
+            int32 evtEncId  = s_EvtEncID(outer);
+            bool isRoomBoss = s_IsRoomBoss(outer);
+            UObject* bossInst = s_BossInstance(outer);
             bool isBoss = (bossInst != nullptr || isRoomBoss);
 
             LOG("[BattleHook] Victory - EncID={}, EvtEncID={}, Boss={}", encId, evtEncId, isBoss);
 
             // Devil IDs of every enemy in the encounter (not just defeated).
             std::vector<int32_t> encounteredEnemyIds;
-            FScriptArray* enemyIDs = reinterpret_cast<FScriptArray*>(bm + kEncountDataOffset + kEnemyIDArrayOffset);
-            if (enemyIDs && enemyIDs->Num() > 0) {
-                int32* ids = static_cast<int32*>(enemyIDs->GetData());
-                for (int32 i = 0; i < enemyIDs->Num(); i++) {
+            int32 enemyCount = s_EnemyIDArray.GetCount(outer);
+            if (enemyCount > 0) {
+                int32* ids = s_EnemyIDArray.GetData(outer);
+                for (int32 i = 0; i < enemyCount; i++) {
                     if (ids[i] != 0) {
                         encounteredEnemyIds.push_back(ids[i]);
                         LOG("[BattleHook] Encounter demon ID[{}] = {}", i, ids[i]);
@@ -215,10 +211,9 @@ void Setup() {
             // is simply absent here.
             std::vector<int32_t> defeatedEnemyIds;
             {
-                FScriptArray* killList = reinterpret_cast<FScriptArray*>(bm + kEnemyKillListOffset);
-                int32 killCount = killList ? killList->Num() : 0;
+                int32 killCount = s_EnemyKillList.GetCount(outer);
                 if (killCount > 0) {
-                    FBtlKillData* data = static_cast<FBtlKillData*>(killList->GetData());
+                    FBtlKillData* data = s_EnemyKillList.GetData(outer);
                     for (int32 i = 0; i < killCount; i++) {
                         int32 id = data[i].m_EnemyID;
                         if (id == 0) continue;

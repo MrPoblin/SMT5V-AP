@@ -1,4 +1,5 @@
 #include "ItemLimits.hpp"
+#include "src/HookHelper.hpp"
 #include "src/Log/Log.hpp"
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/UFunctionStructs.hpp>
@@ -9,6 +10,9 @@ using namespace RC;
 using namespace RC::Unreal;
 
 namespace ItemLimits {
+
+// UMMIAsset: MyFmtData TArray<uint8> at offset 0x28
+static PropertyArrayAccessor<uint8> s_MyFmtData(0x28);
 
 static bool s_Done{false};
 
@@ -26,16 +30,15 @@ void Raise(uint8_t maxAmount) {
     auto* ItemName = UObjectGlobals::FindObject(STR("ScriptMessageAsset"), STR("ItemName"));
     auto* ItemHelp = UObjectGlobals::FindObject(STR("ScriptMessageAsset"), STR("ItemHelpMess"));
 
-    // MyFmtData is at offset 0x28 in UMMIAsset (TArray<uint8>)
-    FScriptArray* arr = reinterpret_cast<FScriptArray*>(reinterpret_cast<uint8*>(ItemAsset) + 0x28);
-    if (!arr || arr->Num() == 0) {
-        WARN("[ItemLimits] MyFmtData empty (num: {})", arr ? arr->Num() : -1);
+    // MyFmtData TArray<uint8> at offset 0x28 in UMMIAsset
+    int32 numBytes = s_MyFmtData.GetCount(ItemAsset);
+    if (numBytes == 0) {
+        WARN("[ItemLimits] MyFmtData empty (num: {})", numBytes);
         return;
     }
-    LOG("[ItemLimits] MyFmtData size: {} bytes", arr->Num());
+    LOG("[ItemLimits] MyFmtData size: {} bytes", numBytes);
 
-    uint8* data = static_cast<uint8*>(arr->GetData());
-    int32 numBytes = arr->Num();
+    uint8* data = s_MyFmtData.GetData(ItemAsset);
 
     constexpr int ENTRY_OFFSET    = 0x55;
     constexpr int ENTRY_STRIDE    = 100;

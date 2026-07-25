@@ -1,7 +1,7 @@
 #include "ChestHooks.hpp"
 #include "PopupSuppression.hpp"
-#include "src/Log/Log.hpp"
 #include "src/HookHelper.hpp"
+#include "src/Log/Log.hpp"
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/UFunctionStructs.hpp>
 #include <Unreal/CoreUObject/UObject/UnrealType.hpp>
@@ -35,10 +35,10 @@ namespace ChestHooks {
     static std::unique_ptr<PLH::x64Detour> s_DataTableHook;
     static uint64_t s_OrigFunc = 0;
 
-    // Runtime FTakaraData offsets (from project source headers)
-    static constexpr uint32 kItemIdOff     = 0x14;
-    static constexpr uint32 kNumOff        = 0x18;
-    static constexpr uint32 kMaccaOff      = 0x1C;
+    // Runtime FTakaraData field accessors (offsets from project source headers)
+    static PropertyField<int32> s_TakaraItemId(0x14);
+    static PropertyField<int32> s_TakaraNum(0x18);
+    static PropertyField<int32> s_TakaraMacca(0x1C);
 
     // The hooked function: FUN_1474c91a0 (DataTable linear search)
     // RCX = DataTable* (global+0x13C0), RDX = mapId, R8 = takaraID, R9 = saveIdOut*
@@ -56,23 +56,23 @@ namespace ChestHooks {
             }
 
             if (!excluded) {
-                auto* itemId = reinterpret_cast<int32*>(static_cast<uint8*>(result) + kItemIdOff);
-                auto* num    = reinterpret_cast<int32*>(static_cast<uint8*>(result) + kNumOff);
-                auto* macca  = reinterpret_cast<int32*>(static_cast<uint8*>(result) + kMaccaOff);
+                int32& itemId = s_TakaraItemId.Get(result);
+                int32& num    = s_TakaraNum.Get(result);
+                int32& macca  = s_TakaraMacca.Get(result);
 
                 if (s_EmptyAllChests.load(std::memory_order_acquire)) {
-                    *itemId = 0;
-                    *num    = 0;
-                    *macca  = 0;
+                    itemId = 0;
+                    num    = 0;
+                    macca  = 0;
                 }
 
                 int32 replItemId = s_ReplaceItemId.load(std::memory_order_acquire);
                 int32 replAmount = s_ReplaceAmount.load(std::memory_order_acquire);
                 int32 replMacca  = s_ReplaceMacca.load(std::memory_order_acquire);
 
-                if (replItemId >= 0) *itemId = replItemId;
-                if (replAmount >= 0) *num    = replAmount;
-                if (replMacca  >= 0) *macca  = replMacca;
+                if (replItemId >= 0) itemId = replItemId;
+                if (replAmount >= 0) num    = replAmount;
+                if (replMacca  >= 0) macca  = replMacca;
             }
         }
 
@@ -140,13 +140,10 @@ namespace ChestHooks {
 
     void Setup() {
         // ── PolyHook2 native hook on FUN_1474c91a0 (DataTable linear search) ──
-        uintptr_t moduleBase = reinterpret_cast<uintptr_t>(GetModuleHandleW(NULL));
-        if (!moduleBase) {
-            WARN("[ChestHooks] Failed to get module base");
+        uint64_t targetAddr = SignatureScanner::FindPattern("48 89 5C 24 ? 48 89 7C 24 ? 4C 63 51");
+        if (!targetAddr) {
+            WARN("[ChestHooks] DataTable lookup signature NOT FOUND");
         } else {
-            constexpr uintptr_t kLookupFuncRVA = 0x1474C91A0 - 0x140000000;
-            uintptr_t targetAddr = moduleBase + kLookupFuncRVA;
-
             uint64_t origAddr = 0;
             auto det = std::make_unique<PLH::x64Detour>(
                 targetAddr,

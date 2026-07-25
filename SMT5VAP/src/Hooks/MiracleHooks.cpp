@@ -1,4 +1,5 @@
 #include "MiracleHooks.hpp"
+#include "src/HookHelper.hpp"
 #include "src/Archipelago/APState.hpp"
 #include "src/Log/Log.hpp"
 #include <cstdint>
@@ -199,23 +200,14 @@ namespace MiracleHooks {
     void Setup() {
         HookSkillLearning();
 
-        // Compute module base from a known exec function
-        auto* Func = FindUFunction(STR("BPL_GodParameter:IsAddedSelectableGodParameterSkill"));
-        if (!Func) {
-            WARN(STR("[MIRACLE] IsAddedSelectableGodParameterSkill NOT FOUND"));
-            return;
-        }
-        void* execFn = Func->GetFunc();
-        if (!execFn) {
-            WARN(STR("[MIRACLE] GetFunc() null"));
-            return;
-        }
-        uintptr_t moduleBase = reinterpret_cast<uintptr_t>(execFn) - 0x140CC6CA0;
-
         // Hook 1: native "IsAdded" check called by GetGodParameterSkillState
-        // sub_147402B90 - bool __fastcall(uint32_t skillId)
+        // Signature: 40 53 41 56 48 83 EC 38 48 89 6C 24 ? 45 31 F6
         {
-            uint64_t target = moduleBase + 0x147402B90;
+            uint64_t target = SignatureScanner::FindPattern("40 53 41 56 48 83 EC 38 48 89 6C 24 ? 45 31 F6");
+            if (!target) {
+                WARN(STR("[MIRACLE] IsAdded signature NOT FOUND"));
+                return;
+            }
             uint64_t hookAddr = reinterpret_cast<uint64_t>(PLH::FnCast(HkIsAdded, &s_IsAddedOrig));
             if (InstallNativeHook(target, hookAddr, reinterpret_cast<uint64_t*>(&s_IsAddedOrig), s_IsAddedDetour)) {
                 LOG(STR("[MIRACLE] IsAdded native hook installed: target={:p}"), (void*)target);
@@ -223,9 +215,13 @@ namespace MiracleHooks {
         }
 
         // Hook 2: native IsAddedSelectableGodParameterSkill implementation
-        // sub_14735FF80 - bool __fastcall(uint32_t skillId)
+        // Signature: 48 89 5C 24 ? 57 48 83 EC 60 89 CF
         {
-            uint64_t target = moduleBase + 0x14735FF80;
+            uint64_t target = SignatureScanner::FindPattern("48 89 5C 24 ? 57 48 83 EC 60 89 CF");
+            if (!target) {
+                WARN(STR("[MIRACLE] IsSelectable signature NOT FOUND"));
+                return;
+            }
             uint64_t hookAddr = reinterpret_cast<uint64_t>(PLH::FnCast(HkIsSelectable, &s_IsSelectableOrig));
             if (InstallNativeHook(target, hookAddr, reinterpret_cast<uint64_t*>(&s_IsSelectableOrig), s_IsSelectableDetour)) {
                 LOG(STR("[MIRACLE] IsSelectable native hook installed: target={:p}"), (void*)target);
@@ -233,9 +229,13 @@ namespace MiracleHooks {
         }
 
         // Hook 3: native IsLearningGodParameterSkill implementation
-        // sub_1473649E0 - bool __fastcall(uint32_t skillId)
+        // Signature: 48 89 5C 24 ? 57 48 83 EC 40 48 63 F9 E8 ? ? ? ? 48 89 C3 ...
         {
-            uint64_t target = moduleBase + 0x1473649E0;
+            uint64_t target = SignatureScanner::FindPattern("48 89 5C 24 ? 57 48 83 EC 40 48 63 F9");
+            if (!target) {
+                WARN(STR("[MIRACLE] IsLearning signature NOT FOUND"));
+                return;
+            }
             uint64_t hookAddr = reinterpret_cast<uint64_t>(PLH::FnCast(HkIsLearning, &s_IsLearningOrig));
             if (InstallNativeHook(target, hookAddr, reinterpret_cast<uint64_t*>(&s_IsLearningOrig), s_IsLearningDetour)) {
                 LOG(STR("[MIRACLE] IsLearning native hook installed: target={:p}"), (void*)target);

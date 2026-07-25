@@ -9,10 +9,9 @@ namespace LevelUpTick {
 // gain. levelsGained = newLevel - oldLevel.
 using LevelUpCallback = std::function<void(int32_t oldLevel, int32_t newLevel)>;
 
-// Per-frame level check. Call from dllmain::on_update; internally throttled
-// to run at most once per PollInterval seconds of real time (framerate
-// independent).
-void Poll();
+// Install hooks on BPL_PartyData:AddPlayerExp for event-driven level detection.
+// Call once from on_unreal_init.
+void Setup();
 
 // Subscribe to protagonist level-up events.
 void OnLevelUp(LevelUpCallback cb);
