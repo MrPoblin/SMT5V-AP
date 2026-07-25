@@ -1,6 +1,6 @@
-#include "LevelUpTick.hpp"
+#include "LevelUpHook.hpp"
 #include "src/HookHelper.hpp"
-#include "src/Functions/LevelFunctions.hpp"
+#include "src/Features/Party/LevelFunctions.hpp"
 #include "src/Log/Log.hpp"
 #include <mutex>
 #include <vector>

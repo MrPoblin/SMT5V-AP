@@ -1,7 +1,7 @@
 #include "DebugUI.hpp"
 #include "src/Log/Log.hpp"
 #include "src/Debug/NoEncounterMode.hpp"
-#include "src/Functions/EventFlags.hpp"
+#include "src/Features/Progression/EventFlags.hpp"
 #include <format>
 
 using namespace RC;

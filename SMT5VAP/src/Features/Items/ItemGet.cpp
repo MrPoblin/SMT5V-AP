@@ -1,7 +1,7 @@
 #include "ItemGet.hpp"
 #include "ItemBlocker.hpp"
 #include "MaccaBlocker.hpp"
-#include "src/Hooks/GloryHooks.hpp"
+#include "src/Features/Collections/GloryHooks.hpp"
 #include "src/Log/Log.hpp"
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/UFunctionStructs.hpp>

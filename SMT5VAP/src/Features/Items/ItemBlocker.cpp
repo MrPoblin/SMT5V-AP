@@ -1,5 +1,5 @@
 #include "ItemBlocker.hpp"
-#include "src/Hooks/GardenHauntHooks.hpp"
+#include "src/Features/Party/GardenHauntHooks.hpp"
 #include "src/Log/Log.hpp"
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/UFunctionStructs.hpp>

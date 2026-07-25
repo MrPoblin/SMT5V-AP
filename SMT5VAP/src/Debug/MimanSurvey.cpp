@@ -2,7 +2,7 @@
 #include "src/Log/Log.hpp"
 #include "src/GameState.hpp"
 #include "src/HookHelper.hpp"
-#include "src/Hooks/MimanHooks.hpp"
+#include "src/Features/Collections/MimanHooks.hpp"
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/AActor.hpp>
 #include <Unreal/World.hpp>

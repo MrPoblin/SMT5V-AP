@@ -1,5 +1,5 @@
 #include "EventFlags.hpp"
-#include "src/Hooks/EventFlagHook.hpp"
+#include "src/Features/Collections/EventFlagHook.hpp"
 #include "src/Log/Log.hpp"
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/UFunctionStructs.hpp>

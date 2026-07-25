@@ -1,5 +1,5 @@
 #include "ChestHooks.hpp"
-#include "PopupSuppression.hpp"
+#include "src/Features/UI/PopupSuppression.hpp"
 #include "src/HookHelper.hpp"
 #include "src/Log/Log.hpp"
 #include <Unreal/UObjectGlobals.hpp>
