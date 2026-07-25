@@ -32,7 +32,8 @@
 #include "src/Tick/CompendiumTick.hpp"
 #include "src/Hooks/EventFlagHook.hpp"
 #include "src/Debug/NoEncounterMode.hpp"
-#include "src/CustomPopups.hpp"
+#include "src/UI/ItemWindow.hpp"
+#include "src/UI/InfoWindow.hpp"
 #include "src/Items/ItemLimits.hpp"
 #include "src/Items/ItemGet.hpp"
 #include "src/Items/ItemBlocker.hpp"
@@ -196,7 +197,8 @@ public:
     auto on_update() -> void override
     {
         AP::CheckAPConnection();
-        CustomPopups::Update();
+        ItemWindow::Update();
+        InfoWindow::Update();
         if (GameState::IsSaveLoaded() && !GameState::IsTransitioning()) {
             CompendiumTick::Poll();
             LevelUpTick::Poll();
@@ -220,14 +222,20 @@ public:
         }
         if (GetAsyncKeyState(VK_F7) & 1) {
             static int NotificationCounter{ 0 };
-            CustomPopups::ShowNotificationF("Notification {}", NotificationCounter);
+            InfoWindow::ShowNotificationF("Notification {}", NotificationCounter);
             NotificationCounter++;
         }
         if (GetAsyncKeyState(VK_F8) & 1) {
+            
             DEBUG("Debug Coordinates:");
             GameState::UpdatePosition();
             DEBUG("X: {}, Y: {}, Z: {}", GameState::PosX(), GameState::PosY(), GameState::PosZ());
             DEBUG("Is in haunt: {}", GardenHauntHooks::IsInGardenLevel());
+        }
+        if (GetAsyncKeyState(VK_F9) & 1) {
+            static int ItemCounter{ 0 };
+            ItemWindow::ShowItemPopupCustom(1, L"Something obtained");
+            ItemCounter++;
         }
     }
 
@@ -261,7 +269,7 @@ public:
         ChestHooks::SetReplacementItem(70);
         ChestHooks::SetReplacementAmount(0);
         ChestHooks::SetReplacementMacca(0);
-        ChestHooks::SetExcludedChests({ 76, 77, 78, 79, 142, 231, 232, 233, 254 });
+        ChestHooks::SetExcludedChests({ 29, 76, 77, 78, 79, 142, 231, 232, 233, 254 });
 
         VendingHooks::Setup();
         VendingHooks::SetReplacement(70, 0, 100);
@@ -311,7 +319,8 @@ public:
 
         MissionHooks::Setup();
 
-        CustomPopups::Setup();
+        ItemWindow::Setup();
+        InfoWindow::Setup();
 
         DeathFunctions::Setup();
 
@@ -339,7 +348,8 @@ public:
             });
 
         GameState::OnMapChanged([](const std::wstring& MapName) {
-            CustomPopups::OnMapChanged();
+            InfoWindow::OnMapChanged();
+            ItemWindow::OnMapChanged();
         });
 
         ChestHooks::OnChestOpened([](std::int32_t takaraSaveId) {
