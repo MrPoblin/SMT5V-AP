@@ -36,6 +36,7 @@
 #include "src/Features/Party/GardenHauntHooks.hpp"
 #include "src/Features/Party/DemonGiftHooks.hpp"
 #include "src/Features/Progression/MissionHooks.hpp"
+#include "src/Features/Progression/MissionRewardHook.hpp"
 #include "src/Features/Progression/EventFlags.hpp"
 #include "src/Features/Save/SaveHooks.hpp"
 #include "src/Features/Shop/EssenceShopHooks.hpp"
@@ -200,6 +201,8 @@ public:
         SaveHooks::Setup();
 
         MissionHooks::Setup();
+        MissionRewardHook::Setup();
+        MissionRewardHook::SetMode(MissionRewardHook::FilterMode::BlockAll);
 
         ItemWindow::Setup();
         InfoWindow::Setup();

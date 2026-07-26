@@ -2,6 +2,7 @@
 #include "src/Log/Log.hpp"
 #include "src/Debug/NoEncounterMode.hpp"
 #include "src/Features/Progression/EventFlags.hpp"
+#include "src/Features/Progression/MissionRewardHook.hpp"
 #include <format>
 
 using namespace RC;
@@ -98,5 +99,33 @@ void RenderDebugTab(CppUserModBase* instance)
     if (ImGui::Button("Set After false"))
     {
         EventFlags::SetMapEventAfter(s_inputMapEventId, false);
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Mission Reward Filter");
+    {
+        using Mode = MissionRewardHook::FilterMode;
+        auto mode = MissionRewardHook::GetMode();
+        int modeInt = static_cast<int>(mode);
+        if (ImGui::RadioButton("Disabled", modeInt == 0)) { MissionRewardHook::SetMode(Mode::Disabled); }
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Block All", modeInt == 1)) { MissionRewardHook::SetMode(Mode::BlockAll); }
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Keep Exp", modeInt == 2)) { MissionRewardHook::SetMode(Mode::KeepExp); }
+    }
+    {
+        static int s_exceptId = 0;
+        ImGui::InputInt("Mission ID##except", &s_exceptId);
+        if (ImGui::Button("Add Exception")) {
+            MissionRewardHook::AddException(s_exceptId);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Remove Exception")) {
+            MissionRewardHook::RemoveException(s_exceptId);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Clear All Exceptions")) {
+            MissionRewardHook::ClearExceptions();
+        }
     }
 }
