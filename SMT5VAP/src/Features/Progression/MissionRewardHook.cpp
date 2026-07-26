@@ -90,10 +90,10 @@ static void ZeroCacheEntry(int32_t missionId, bool keepExp) {
         *reinterpret_cast<int32_t*>(entry + CACHE_EXP)     = 0;
 
     if (keepExp)
-        LOG("[MissionRewardFilter] Zeroed cache for mission {} (was: macca={}, exp={}, items={}) [exp KEPT]",
+        LOG("[MissionRewardHook] Zeroed cache for mission {} (was: macca={}, exp={}, items={}) [exp KEPT]",
             missionId, oldMacca, oldExp, oldCount);
     else
-        LOG("[MissionRewardFilter] Zeroed cache for mission {} (was: macca={}, exp={}, items={})",
+        LOG("[MissionRewardHook] Zeroed cache for mission {} (was: macca={}, exp={}, items={})",
             missionId, oldMacca, oldExp, oldCount);
 }
 
@@ -108,7 +108,7 @@ static void ZeroDescriptorStructs() {
 
     memset(descArray + (1 * 64), 0, 64);
     memset(descArray + (2 * 64), 0, 64);
-    LOG("[MissionRewardFilter] Zeroed descriptor structs (type 1+2)");
+    LOG("[MissionRewardHook] Zeroed descriptor structs (type 1+2)");
 }
 
 static void BlockRewards(int32_t missionId) {
@@ -141,7 +141,7 @@ namespace MissionRewardHook {
 
     void SetMode(FilterMode mode) {
         s_Mode.store(mode, std::memory_order_relaxed);
-        LOG("[MissionRewardFilter] Mode set to {}", static_cast<int>(mode));
+        LOG("[MissionRewardHook] Mode set to {}", static_cast<int>(mode));
     }
 
     FilterMode GetMode() {
@@ -151,25 +151,25 @@ namespace MissionRewardHook {
     void AddException(int32_t missionId) {
         std::lock_guard<std::mutex> L(s_ExceptionMutex);
         s_Exceptions.insert(missionId);
-        LOG("[MissionRewardFilter] Added exception for mission {}", missionId);
+        LOG("[MissionRewardHook] Added exception for mission {}", missionId);
     }
 
     void RemoveException(int32_t missionId) {
         std::lock_guard<std::mutex> L(s_ExceptionMutex);
         s_Exceptions.erase(missionId);
-        LOG("[MissionRewardFilter] Removed exception for mission {}", missionId);
+        LOG("[MissionRewardHook] Removed exception for mission {}", missionId);
     }
 
     void ClearExceptions() {
         std::lock_guard<std::mutex> L(s_ExceptionMutex);
         s_Exceptions.clear();
-        LOG("[MissionRewardFilter] Cleared all exceptions");
+        LOG("[MissionRewardHook] Cleared all exceptions");
     }
 
     void SetExceptions(std::initializer_list<int32_t> ids) {
         std::lock_guard<std::mutex> L(s_ExceptionMutex);
         s_Exceptions = std::unordered_set<int32_t>(ids);
-        LOG("[MissionRewardFilter] Set {} exceptions", s_Exceptions.size());
+        LOG("[MissionRewardHook] Set {} exceptions", s_Exceptions.size());
     }
 
     bool IsException(int32_t missionId) {
@@ -177,10 +177,10 @@ namespace MissionRewardHook {
     }
 
     void Setup() {
-        LOG("[MissionRewardFilter] Setup...");
+        LOG("[MissionRewardHook] Setup...");
 
         if (s_Resolved) {
-            LOG("[MissionRewardFilter] Already resolved, skipping");
+            LOG("[MissionRewardHook] Already resolved, skipping");
             return;
         }
 
@@ -188,21 +188,21 @@ namespace MissionRewardHook {
         uint64_t mgrAddr = SignatureScanner::FindPattern(SIG_MANAGER_GET);
         if (mgrAddr) {
             s_GetManager = reinterpret_cast<FnGetManager>(mgrAddr);
-            LOG("[MissionRewardFilter] Manager getter resolved at 0x{:x}", mgrAddr);
+            LOG("[MissionRewardHook] Manager getter resolved at 0x{:x}", mgrAddr);
         } else {
-            LOG("[MissionRewardFilter] ERROR: Manager getter signature NOT FOUND");
+            LOG("[MissionRewardHook] ERROR: Manager getter signature NOT FOUND");
         }
 
         uint64_t cacheAddr = SignatureScanner::FindPattern(SIG_CACHE_LOOKUP);
         if (cacheAddr) {
             s_CacheLookup = reinterpret_cast<FnCacheLookup>(cacheAddr);
-        LOG("[MissionRewardFilter] Cache lookup resolved at 0x{:x}", cacheAddr);
+        LOG("[MissionRewardHook] Cache lookup resolved at 0x{:x}", cacheAddr);
         } else {
-        LOG("[MissionRewardFilter] ERROR: Cache lookup signature NOT FOUND");
+        LOG("[MissionRewardHook] ERROR: Cache lookup signature NOT FOUND");
         }
 
         if (!s_GetManager || !s_CacheLookup) {
-        LOG("[MissionRewardFilter] Cannot hook — missing native function pointers");
+        LOG("[MissionRewardHook] Cannot hook — missing native function pointers");
         return;
         }
 
@@ -218,12 +218,12 @@ namespace MissionRewardHook {
         if (det->hook()) {
         s_OrigRewardEval = PLH::FnCast(origAddr, s_OrigRewardEval);
         s_RewardEvalDetour = std::move(det);
-        LOG("[MissionRewardFilter] Reward eval hook installed at 0x{:x}", rewardEvalAddr);
+        LOG("[MissionRewardHook] Reward eval hook installed at 0x{:x}", rewardEvalAddr);
         } else {
-        LOG("[MissionRewardFilter] ERROR: Reward eval hook FAILED at 0x{:x}", rewardEvalAddr);
+        LOG("[MissionRewardHook] ERROR: Reward eval hook FAILED at 0x{:x}", rewardEvalAddr);
         }
         } else {
-        LOG("[MissionRewardFilter] WARN: Reward eval signature NOT FOUND");
+        LOG("[MissionRewardHook] WARN: Reward eval signature NOT FOUND");
         }
 
         uint64_t expEvalAddr = SignatureScanner::FindPattern(SIG_EXP_EVAL);
@@ -237,12 +237,12 @@ namespace MissionRewardHook {
         if (det->hook()) {
         s_OrigExpEval = PLH::FnCast(origAddr, s_OrigExpEval);
         s_ExpEvalDetour = std::move(det);
-        LOG("[MissionRewardFilter] Exp eval hook installed at 0x{:x}", expEvalAddr);
+        LOG("[MissionRewardHook] Exp eval hook installed at 0x{:x}", expEvalAddr);
         } else {
-        LOG("[MissionRewardFilter] ERROR: Exp eval hook FAILED at 0x{:x}", expEvalAddr);
+        LOG("[MissionRewardHook] ERROR: Exp eval hook FAILED at 0x{:x}", expEvalAddr);
             }
         } else {
-            LOG("[MissionRewardFilter] WARN: Exp eval signature NOT FOUND");
+            LOG("[MissionRewardHook] WARN: Exp eval signature NOT FOUND");
         }
 
         // ── UFunction pre-hook on CompleteMission ──
@@ -254,7 +254,7 @@ namespace MissionRewardHook {
 
         if (compFunc) {
             auto* IdProp = compFunc->GetPropertyByName(STR("MissionId"));
-            LOG("[MissionRewardFilter] CompleteMission UFunction found, MissionId prop={}", IdProp ? 1 : 0);
+            LOG("[MissionRewardHook] CompleteMission UFunction found, MissionId prop={}", IdProp ? 1 : 0);
 
             s_CompleteMissionHookId = compFunc->RegisterPreHook(
                 [IdProp](UnrealScriptFunctionCallableContext& Ctx, void*) {
@@ -263,19 +263,19 @@ namespace MissionRewardHook {
                         if (auto* P = IdProp->ContainerPtrToValuePtr<int32>(Ctx.TheStack.Locals()))
                             id = *P;
 
-                    LOG("[MissionRewardFilter] CompleteMission PRE-hook mission={}", id);
+                    LOG("[MissionRewardHook] CompleteMission PRE-hook mission={}", id);
 
                     if (id >= 0 && ShouldBlock(id)) {
                         BlockRewards(id);
                     }
                 }
             );
-            LOG("[MissionRewardFilter] CompleteMission pre-hook registered (id={})", s_CompleteMissionHookId);
+            LOG("[MissionRewardHook] CompleteMission pre-hook registered (id={})", s_CompleteMissionHookId);
         } else {
-            LOG("[MissionRewardFilter] ERROR: CompleteMission UFunction NOT FOUND");
+            LOG("[MissionRewardHook] ERROR: CompleteMission UFunction NOT FOUND");
         }
 
         s_Resolved = true;
-        LOG("[MissionRewardFilter] Setup complete");
+        LOG("[MissionRewardHook] Setup complete");
     }
 }
