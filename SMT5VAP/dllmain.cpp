@@ -206,7 +206,7 @@ public:
 
         MissionHooks::Setup();
         MissionRewardHook::Setup();
-        MissionRewardHook::SetMode(MissionRewardHook::FilterMode::Disabled);
+        MissionRewardHook::SetMode(MissionRewardHook::FilterMode::BlockAll);
         MissionRewardHook::SetCustomRewardText(6, L"Super Reward");
         MissionRewardHook::SetCustomRewardText(85, L"Good Reward ");
         MissionRewardHook::SetCustomRewardText(107, L"Mega Reward");

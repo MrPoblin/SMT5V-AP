@@ -95,6 +95,10 @@ struct OriginalCacheValues {
 static std::mutex s_OriginalCacheMutex;
 static std::unordered_map<int32_t, OriginalCacheValues> s_OriginalCache;
 
+// ── Forward declarations ───────────────────────────────────────────────
+static void ZeroDescriptorStructs();
+static void ZeroCacheEntry(int32_t missionId, bool keepExp);
+
 // ── Helpers ────────────────────────────────────────────────────────────
 static bool IsException_Unlocked(int32_t id) {
     std::lock_guard<std::mutex> L(s_ExceptionMutex);
@@ -131,7 +135,25 @@ static void ZeroCacheEntry(int32_t missionId, bool keepExp) {
     int32_t oldExp   = *reinterpret_cast<int32_t*>(entry + CACHE_EXP);
     int32_t oldCount = *reinterpret_cast<int32_t*>(entry + CACHE_ITEM_COUNT);
 
-    *reinterpret_cast<uint64_t*>(entry + CACHE_ITEM_ARRAY) = 0;
+    // Save originals before zeroing
+    {
+        auto** pairArrayPtr = reinterpret_cast<int32_t**>(entry + CACHE_ITEM_ARRAY);
+        auto* pairArray = *pairArrayPtr;
+        std::lock_guard<std::mutex> lock(s_OriginalCacheMutex);
+        if (s_OriginalCache.find(missionId) == s_OriginalCache.end() && pairArray) {
+            OriginalCacheValues orig{};
+            int32_t saveCount = (oldCount > 8) ? 8 : oldCount;
+            for (int32_t i = 0; i < saveCount; i++) {
+                orig.itemIds[i]  = pairArray[i * 2];
+                orig.itemNums[i] = pairArray[i * 2 + 1];
+            }
+            orig.count = oldCount;
+            orig.macca = oldMacca;
+            orig.exp   = oldExp;
+            s_OriginalCache[missionId] = orig;
+        }
+    }
+
     *reinterpret_cast<int32_t*>(entry + CACHE_ITEM_COUNT)  = 0;
     *reinterpret_cast<int32_t*>(entry + CACHE_MACCA)       = 0;
     if (!keepExp)
@@ -143,6 +165,50 @@ static void ZeroCacheEntry(int32_t missionId, bool keepExp) {
     else
         LOG("[MissionRewardHook] Zeroed cache for mission {} (was: macca={}, exp={}, items={})",
             missionId, oldMacca, oldExp, oldCount);
+}
+
+// Patch cache with magic item ID for display (called after zeroing)
+static void PatchCacheForDisplay(int32_t missionId) {
+    std::wstring customText;
+    {
+        std::lock_guard<std::mutex> lock(s_CustomTextMutex);
+        auto it = s_CustomTexts.find(missionId);
+        if (it == s_CustomTexts.end()) return;
+    }
+
+    int32_t magicId = 1000000 + missionId;
+    uint8_t* entry = GetCacheEntry(missionId);
+    if (!entry) return;
+
+    auto** pairArrayPtr = reinterpret_cast<int32_t**>(entry + CACHE_ITEM_ARRAY);
+    auto* pairArray = *pairArrayPtr;
+    if (!pairArray || reinterpret_cast<uint64_t>(pairArray) <= 0x10000) return;
+
+    // Save originals if not already saved (for restoration on complete)
+    {
+        int32_t currentCount = *reinterpret_cast<int32_t*>(entry + CACHE_ITEM_COUNT);
+        int32_t macca = *reinterpret_cast<int32_t*>(entry + CACHE_MACCA);
+        int32_t exp = *reinterpret_cast<int32_t*>(entry + CACHE_EXP);
+        std::lock_guard<std::mutex> lock(s_OriginalCacheMutex);
+        if (s_OriginalCache.find(missionId) == s_OriginalCache.end()) {
+            OriginalCacheValues orig{};
+            int32_t saveCount = (currentCount > 8) ? 8 : currentCount;
+            for (int32_t i = 0; i < saveCount; i++) {
+                orig.itemIds[i]  = pairArray[i * 2];
+                orig.itemNums[i] = pairArray[i * 2 + 1];
+            }
+            orig.count = currentCount;
+            orig.macca = macca;
+            orig.exp   = exp;
+            s_OriginalCache[missionId] = orig;
+        }
+    }
+
+    pairArray[0] = magicId;
+    pairArray[1] = 1;
+    *reinterpret_cast<int32_t*>(entry + CACHE_ITEM_COUNT) = 1;
+    *reinterpret_cast<int32_t*>(entry + CACHE_MACCA) = 0;
+    *reinterpret_cast<int32_t*>(entry + CACHE_EXP) = 0;
 }
 
 static void ZeroDescriptorStructs() {
@@ -162,26 +228,27 @@ static void ZeroDescriptorStructs() {
 static void BlockRewards(int32_t missionId) {
     bool keepExp = s_Mode.load(std::memory_order_relaxed) == MissionRewardHook::FilterMode::KeepExp;
     ZeroCacheEntry(missionId, keepExp);
-    ZeroDescriptorStructs();
 }
 
 // ── Hook: items/macca evaluator (sub_1474F1B90) ────────────────────────
 static __int64 __fastcall HkRewardEval(int a1, int* a2, int* a3) {
+    auto result = reinterpret_cast<decltype(&HkRewardEval)>(s_OrigRewardEval)(a1, a2, a3);
     if (ShouldBlock(a1)) {
         BlockRewards(a1);
+        PatchCacheForDisplay(a1);
     }
-
-    return reinterpret_cast<decltype(&HkRewardEval)>(s_OrigRewardEval)(a1, a2, a3);
+    return result;
 }
 
 // ── Hook: exp evaluator (sub_140AEA250) ────────────────────────────────
 static __int64 __fastcall HkExpEval(int a1) {
+    auto result = reinterpret_cast<decltype(&HkExpEval)>(s_OrigExpEval)(a1);
     if (ShouldBlock(a1)) {
         bool keepExp = s_Mode.load(std::memory_order_relaxed) == MissionRewardHook::FilterMode::KeepExp;
         ZeroCacheEntry(a1, keepExp);
+        PatchCacheForDisplay(a1);
     }
-
-    return reinterpret_cast<decltype(&HkExpEval)>(s_OrigExpEval)(a1);
+    return result;
 }
 
 // ── Hook: GetDataTableRowFromName via UFunction post-hook ────────────
@@ -310,7 +377,7 @@ static std::atomic<int32_t> s_RewardMsgMissionId{-1};
 static __int64 __fastcall HkGetMissionRewardMsg(void* this_, void* execContext, __int64 output) {
     int32_t missionId = s_RewardMsgMissionId.load(std::memory_order_relaxed);
 
-    // Patch cache to show custom text (save originals first)
+    // Also patch cache here (in case reward evaluators haven't fired yet)
     if (missionId >= 0) {
         std::wstring customText;
         {
@@ -319,44 +386,7 @@ static __int64 __fastcall HkGetMissionRewardMsg(void* this_, void* execContext, 
             if (it != s_CustomTexts.end()) customText = it->second;
         }
         if (!customText.empty()) {
-            int32_t magicId = 1000000 + missionId;
-            uint8_t* entry = GetCacheEntry(missionId);
-            if (entry) {
-                auto** pairArrayPtr = reinterpret_cast<int32_t**>(entry + CACHE_ITEM_ARRAY);
-                auto* pairArray = *pairArrayPtr;
-                int32_t currentCount = *reinterpret_cast<int32_t*>(entry + CACHE_ITEM_COUNT);
-                int32_t macca = *reinterpret_cast<int32_t*>(entry + CACHE_MACCA);
-                int32_t exp = *reinterpret_cast<int32_t*>(entry + CACHE_EXP);
-
-                if (pairArray && reinterpret_cast<uint64_t>(pairArray) > 0x10000) {
-                    // Save original values before patching
-                    {
-                        std::lock_guard<std::mutex> lock(s_OriginalCacheMutex);
-                        if (s_OriginalCache.find(missionId) == s_OriginalCache.end()) {
-                            OriginalCacheValues orig{};
-                            int32_t saveCount = (currentCount > 8) ? 8 : currentCount;
-                            for (int32_t i = 0; i < saveCount; i++) {
-                                orig.itemIds[i]  = pairArray[i * 2];
-                                orig.itemNums[i] = pairArray[i * 2 + 1];
-                            }
-                            orig.count = currentCount;
-                            orig.macca = macca;
-                            orig.exp   = exp;
-                            s_OriginalCache[missionId] = orig;
-                            LOG("[MissionRewardHook] Saved original cache for mission {} ({} items, macca={}, exp={})",
-                                missionId, currentCount, macca, exp);
-                        }
-                    }
-
-                    // Patch: replace all items with our magic item
-                    pairArray[0] = magicId;
-                    pairArray[1] = 1;
-                    *reinterpret_cast<int32_t*>(entry + CACHE_ITEM_COUNT) = 1;
-                    *reinterpret_cast<int32_t*>(entry + CACHE_MACCA) = 0;
-                    *reinterpret_cast<int32_t*>(entry + CACHE_EXP) = 0;
-                    LOG("[MissionRewardHook] Patched cache for mission {} -> magic ID {}", missionId, magicId);
-                }
-            }
+            PatchCacheForDisplay(missionId);
 
             // Fire callbacks
             {
@@ -574,34 +604,55 @@ namespace MissionRewardHook {
 
                     LOG("[MissionRewardHook] CompleteMission PRE-hook mission={}", id);
 
-                    // Restore original cache values before the game processes completion
                     if (id >= 0) {
-                        std::lock_guard<std::mutex> lock(s_OriginalCacheMutex);
-                        auto it = s_OriginalCache.find(id);
-                        if (it != s_OriginalCache.end()) {
-                            uint8_t* entry = GetCacheEntry(id);
-                            if (entry) {
-                                auto** pairArrayPtr = reinterpret_cast<int32_t**>(entry + CACHE_ITEM_ARRAY);
-                                auto* pairArray = *pairArrayPtr;
-                                if (pairArray && reinterpret_cast<uint64_t>(pairArray) > 0x10000) {
-                                    auto& orig = it->second;
-                                    for (int32_t i = 0; i < orig.count && i < 8; i++) {
-                                        pairArray[i * 2]     = orig.itemIds[i];
-                                        pairArray[i * 2 + 1] = orig.itemNums[i];
+                        // Clear custom text so reward evaluators stop re-patching
+                        {
+                            std::lock_guard<std::mutex> lock(s_CustomTextMutex);
+                            s_CustomTexts.erase(id);
+                        }
+                        {
+                            std::lock_guard<std::mutex> lock(s_CustomItemMutex);
+                            s_CustomItemNames.erase(1000000 + id);
+                        }
+
+                        // Restore originals (undo display patch)
+                        {
+                            std::lock_guard<std::mutex> lock(s_OriginalCacheMutex);
+                            auto it = s_OriginalCache.find(id);
+                            if (it != s_OriginalCache.end()) {
+                                uint8_t* entry = GetCacheEntry(id);
+                                if (entry) {
+                                    auto** pairArrayPtr = reinterpret_cast<int32_t**>(entry + CACHE_ITEM_ARRAY);
+                                    auto* pairArray = *pairArrayPtr;
+                                    if (pairArray && reinterpret_cast<uint64_t>(pairArray) > 0x10000) {
+                                        auto& orig = it->second;
+                                        for (int32_t i = 0; i < orig.count && i < 8; i++) {
+                                            pairArray[i * 2]     = orig.itemIds[i];
+                                            pairArray[i * 2 + 1] = orig.itemNums[i];
+                                        }
+                                        *reinterpret_cast<int32_t*>(entry + CACHE_ITEM_COUNT) = orig.count;
+                                        *reinterpret_cast<int32_t*>(entry + CACHE_MACCA) = orig.macca;
+                                        *reinterpret_cast<int32_t*>(entry + CACHE_EXP) = orig.exp;
+                                        LOG("[MissionRewardHook] Restored originals for mission {} ({} items)", id, orig.count);
                                     }
-                                    *reinterpret_cast<int32_t*>(entry + CACHE_ITEM_COUNT) = orig.count;
-                                    *reinterpret_cast<int32_t*>(entry + CACHE_MACCA) = orig.macca;
-                                    *reinterpret_cast<int32_t*>(entry + CACHE_EXP) = orig.exp;
-                                    LOG("[MissionRewardHook] Restored original cache for mission {} ({} items, macca={}, exp={})",
-                                        id, orig.count, orig.macca, orig.exp);
                                 }
                                 s_OriginalCache.erase(it);
                             }
                         }
-                    }
 
-                    if (id >= 0 && ShouldBlock(id)) {
-                        BlockRewards(id);
+                        // Apply blocker: force-zero
+                        if (ShouldBlock(id)) {
+                            uint8_t* entry = GetCacheEntry(id);
+                            if (entry) {
+                                bool keepExp = s_Mode.load(std::memory_order_relaxed) == MissionRewardHook::FilterMode::KeepExp;
+                                *reinterpret_cast<int32_t*>(entry + CACHE_ITEM_COUNT)  = 0;
+                                *reinterpret_cast<int32_t*>(entry + CACHE_MACCA)       = 0;
+                                if (!keepExp)
+                                    *reinterpret_cast<int32_t*>(entry + CACHE_EXP)     = 0;
+                                LOG("[MissionRewardHook] CompleteMission: blocked rewards for mission {}", id);
+                            }
+                            ZeroDescriptorStructs();
+                        }
                     }
                 }
             );
