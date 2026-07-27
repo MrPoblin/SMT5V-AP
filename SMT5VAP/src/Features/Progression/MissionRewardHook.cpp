@@ -80,6 +80,21 @@ static std::mutex s_CustomItemMutex;
 static std::unordered_map<int32_t, std::wstring> s_CustomItemNames;
 static CallbackId s_ItemGetNameHookId{-1};
 
+// ── Mission reward shown callback ──────────────────────────────────────
+static std::mutex s_CallbackMutex;
+static std::vector<MissionRewardHook::RewardShownCallback> s_RewardShownCallbacks;
+
+// ── Original cache values (saved before patching, restored on complete) ─
+struct OriginalCacheValues {
+    int32_t itemIds[8];   // up to8 items
+    int32_t itemNums[8];
+    int32_t count;
+    int32_t macca;
+    int32_t exp;
+};
+static std::mutex s_OriginalCacheMutex;
+static std::unordered_map<int32_t, OriginalCacheValues> s_OriginalCache;
+
 // ── Helpers ────────────────────────────────────────────────────────────
 static bool IsException_Unlocked(int32_t id) {
     std::lock_guard<std::mutex> L(s_ExceptionMutex);
@@ -287,14 +302,15 @@ static __int64 __fastcall HkGetMissionInfoTagMessage(void* this_, void* execCont
 
 // ── Hook: execGetMissionRewardMsg (sub_14B89A710) ──────────────────────
 // Called by Blueprint: GetMissionRewardMsg(MissionId, int32& outTag1, int32& outTag2)
-// This is the primary function the mission menu uses to display reward text
+// This is the primary function the mission menu uses to display reward text.
+// Strategy: save original cache values, patch to show custom text, restore on complete.
 static CallbackId s_RewardMsgPreHookId{-1};
 static std::atomic<int32_t> s_RewardMsgMissionId{-1};
 
 static __int64 __fastcall HkGetMissionRewardMsg(void* this_, void* execContext, __int64 output) {
     int32_t missionId = s_RewardMsgMissionId.load(std::memory_order_relaxed);
 
-    // Lazily patch cache entry with magic item ID (fires after save data has loaded)
+    // Patch cache to show custom text (save originals first)
     if (missionId >= 0) {
         std::wstring customText;
         {
@@ -308,7 +324,31 @@ static __int64 __fastcall HkGetMissionRewardMsg(void* this_, void* execContext, 
             if (entry) {
                 auto** pairArrayPtr = reinterpret_cast<int32_t**>(entry + CACHE_ITEM_ARRAY);
                 auto* pairArray = *pairArrayPtr;
+                int32_t currentCount = *reinterpret_cast<int32_t*>(entry + CACHE_ITEM_COUNT);
+                int32_t macca = *reinterpret_cast<int32_t*>(entry + CACHE_MACCA);
+                int32_t exp = *reinterpret_cast<int32_t*>(entry + CACHE_EXP);
+
                 if (pairArray && reinterpret_cast<uint64_t>(pairArray) > 0x10000) {
+                    // Save original values before patching
+                    {
+                        std::lock_guard<std::mutex> lock(s_OriginalCacheMutex);
+                        if (s_OriginalCache.find(missionId) == s_OriginalCache.end()) {
+                            OriginalCacheValues orig{};
+                            int32_t saveCount = (currentCount > 8) ? 8 : currentCount;
+                            for (int32_t i = 0; i < saveCount; i++) {
+                                orig.itemIds[i]  = pairArray[i * 2];
+                                orig.itemNums[i] = pairArray[i * 2 + 1];
+                            }
+                            orig.count = currentCount;
+                            orig.macca = macca;
+                            orig.exp   = exp;
+                            s_OriginalCache[missionId] = orig;
+                            LOG("[MissionRewardHook] Saved original cache for mission {} ({} items, macca={}, exp={})",
+                                missionId, currentCount, macca, exp);
+                        }
+                    }
+
+                    // Patch: replace all items with our magic item
                     pairArray[0] = magicId;
                     pairArray[1] = 1;
                     *reinterpret_cast<int32_t*>(entry + CACHE_ITEM_COUNT) = 1;
@@ -317,41 +357,18 @@ static __int64 __fastcall HkGetMissionRewardMsg(void* this_, void* execContext, 
                     LOG("[MissionRewardHook] Patched cache for mission {} -> magic ID {}", missionId, magicId);
                 }
             }
-        }
-    }
 
-    auto result = reinterpret_cast<decltype(&HkGetMissionRewardMsg)>(s_OrigRewardMsg)(this_, execContext, output);
-
-    if (missionId >= 0) {
-        std::wstring customText;
-        {
-            std::lock_guard<std::mutex> lock(s_CustomTextMutex);
-            auto it = s_CustomTexts.find(missionId);
-            if (it != s_CustomTexts.end()) customText = it->second;
-        }
-
-        if (!customText.empty()) {
-            // output points to FScriptMessage (return value, 0x40 bytes)
-            // TArray<FText> MessageTextPages at offset 0x10:
-            //   +0x10: FText* Data  (pointer to FText array)
-            //   +0x18: int32 Count
-            FText** textArray = reinterpret_cast<FText**>(output + 0x10);
-            int32_t* count = reinterpret_cast<int32_t*>(output + 0x18);
-
-            if (textArray && *textArray && count && *count > 0) {
-                FText newText(customText.c_str());
-                memcpy(*textArray, &newText, sizeof(FText));
-                if (newText.SharedRefCollector)
-                    _InterlockedIncrement((volatile long*)((char*)newText.SharedRefCollector + 8));
-                *count = 1;
-                LOG("[MissionRewardHook] Replaced reward msg for mission {} via memcpy", missionId);
-            } else {
-                LOG("[MissionRewardHook] Cannot replace text for mission {}: textArray={} *textArray={} count={} *count={}",
-                    missionId, (void*)textArray, textArray?(void*)*textArray:nullptr, (void*)count, count?*count:-1);
+            // Fire callbacks
+            {
+                std::lock_guard<std::mutex> lock(s_CallbackMutex);
+                for (auto& cb : s_RewardShownCallbacks) {
+                    cb(missionId, customText);
+                }
             }
         }
     }
 
+    auto result = reinterpret_cast<decltype(&HkGetMissionRewardMsg)>(s_OrigRewardMsg)(this_, execContext, output);
     return result;
 }
 
@@ -460,6 +477,12 @@ namespace MissionRewardHook {
         LOG("[MissionRewardHook] Cleared all custom item names");
     }
 
+    void OnRewardShown(RewardShownCallback callback) {
+        std::lock_guard<std::mutex> lock(s_CallbackMutex);
+        s_RewardShownCallbacks.push_back(std::move(callback));
+        LOG("[MissionRewardHook] Registered reward shown callback");
+    }
+
     // ── Diagnostic: hook every script message lookup to see what the menu queries ──
     // We'll hook UMessageUI::GetMessageDataFromId and similar to trace the exact lookup path
     void Setup() {
@@ -550,6 +573,32 @@ namespace MissionRewardHook {
                             id = *P;
 
                     LOG("[MissionRewardHook] CompleteMission PRE-hook mission={}", id);
+
+                    // Restore original cache values before the game processes completion
+                    if (id >= 0) {
+                        std::lock_guard<std::mutex> lock(s_OriginalCacheMutex);
+                        auto it = s_OriginalCache.find(id);
+                        if (it != s_OriginalCache.end()) {
+                            uint8_t* entry = GetCacheEntry(id);
+                            if (entry) {
+                                auto** pairArrayPtr = reinterpret_cast<int32_t**>(entry + CACHE_ITEM_ARRAY);
+                                auto* pairArray = *pairArrayPtr;
+                                if (pairArray && reinterpret_cast<uint64_t>(pairArray) > 0x10000) {
+                                    auto& orig = it->second;
+                                    for (int32_t i = 0; i < orig.count && i < 8; i++) {
+                                        pairArray[i * 2]     = orig.itemIds[i];
+                                        pairArray[i * 2 + 1] = orig.itemNums[i];
+                                    }
+                                    *reinterpret_cast<int32_t*>(entry + CACHE_ITEM_COUNT) = orig.count;
+                                    *reinterpret_cast<int32_t*>(entry + CACHE_MACCA) = orig.macca;
+                                    *reinterpret_cast<int32_t*>(entry + CACHE_EXP) = orig.exp;
+                                    LOG("[MissionRewardHook] Restored original cache for mission {} ({} items, macca={}, exp={})",
+                                        id, orig.count, orig.macca, orig.exp);
+                                }
+                                s_OriginalCache.erase(it);
+                            }
+                        }
+                    }
 
                     if (id >= 0 && ShouldBlock(id)) {
                         BlockRewards(id);
