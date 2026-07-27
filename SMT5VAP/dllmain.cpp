@@ -26,6 +26,7 @@
 #include "src/Features/Items/ItemBlocker.hpp"
 #include "src/Features/Items/ItemGet.hpp"
 #include "src/Features/Items/ItemLimits.hpp"
+#include "src/Features/Items/ItemTableInjector.hpp"
 #include "src/Features/Items/MaccaBlocker.hpp"
 #include "src/Features/Items/ExpGive.hpp"
 #include "src/Features/Items/UseItemHook.hpp"
@@ -200,9 +201,15 @@ public:
 
         SaveHooks::Setup();
 
+        // Must be BEFORE save callbacks that trigger MakeUpItemDataTable
+        ItemTableInjector::Setup();
+
         MissionHooks::Setup();
         MissionRewardHook::Setup();
-        MissionRewardHook::SetMode(MissionRewardHook::FilterMode::BlockAll);
+        MissionRewardHook::SetMode(MissionRewardHook::FilterMode::Disabled);
+        MissionRewardHook::SetCustomRewardText(6, L"Super Reward");
+        MissionRewardHook::SetCustomRewardText(85, L"Good Reward ");
+        MissionRewardHook::SetCustomRewardText(107, L"Mega Reward");
 
         ItemWindow::Setup();
         InfoWindow::Setup();
@@ -225,6 +232,8 @@ public:
                 static bool onceAfterSaveInitialized{ false };
                 if (!onceAfterSaveInitialized) {
                     ItemLimits::Raise(255);
+                    // Inject custom rows into the item DataTable AFTER it's built
+                    ItemTableInjector::InjectRowMap();
                     FusionGating::Setup();
 
                     onceAfterSaveInitialized = true;
