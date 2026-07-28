@@ -38,6 +38,7 @@
 #include "src/Features/Party/DemonGiftHooks.hpp"
 #include "src/Features/Progression/MissionHooks.hpp"
 #include "src/Features/Progression/MissionRewardHook.hpp"
+#include "src/Features/Progression/MissionScoutManager.hpp"
 #include "src/Features/Progression/EventFlags.hpp"
 #include "src/Features/Save/SaveHooks.hpp"
 #include "src/Features/Shop/EssenceShopHooks.hpp"
@@ -206,6 +207,7 @@ public:
 
         MissionHooks::Setup();
         MissionRewardHook::Setup();
+        MissionScoutManager::Setup();
         MissionRewardHook::SetMode(MissionRewardHook::FilterMode::Disabled);
         MissionRewardHook::SetCustomRewardText(6, L"Super Reward");
         MissionRewardHook::SetCustomRewardText(85, L"Good Reward");
@@ -232,6 +234,7 @@ public:
                 static bool onceAfterSaveInitialized{ false };
                 if (!onceAfterSaveInitialized) {
                     ItemLimits::Raise(255);
+                    MissionScoutManager::Rescan();
                     FusionGating::Setup();
 
                     onceAfterSaveInitialized = true;
@@ -323,6 +326,14 @@ public:
         });
 
         CompendiumTick::OnDemonAcquired([](int32_t devilID) {
+            ;
+        });
+
+        MissionScoutManager::OnMissionsLoaded([](const std::vector<int32_t>& ids) {
+            ; 
+        });
+
+        MissionScoutManager::OnMissionAdded([](int32_t id) {
             ;
         });
 
