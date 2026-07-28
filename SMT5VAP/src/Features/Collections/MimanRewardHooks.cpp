@@ -129,7 +129,6 @@ namespace MimanRewardHooks {
                         auto it = s_CustomTexts.find(tierIndex);
                         if (it != s_CustomTexts.end() && !it->second.empty()) {
                             *reinterpret_cast<int32*>(result + 0x04) = MIMAN_MAGIC_ID_BASE + tierIndex;
-                            LOG("[MimanRewardHooks] DispNameID -> {} for tier {}", MIMAN_MAGIC_ID_BASE + tierIndex, tierIndex);
                         }
                     }
                 }

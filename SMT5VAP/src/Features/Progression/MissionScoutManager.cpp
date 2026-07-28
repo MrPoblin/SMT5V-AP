@@ -71,7 +71,7 @@ static bool TryScanActiveMissions() {
         s_ActiveMissions = missionIds;
     }
 
-    LOG("[MissionScoutManager] Found {} active missions", missionIds.size());
+    //LOG("[MissionScoutManager] Found {} active missions", missionIds.size());
 
     std::lock_guard<std::mutex> lock(s_CallbackMutex);
     for (auto& cb : s_LoadedCallbacks) cb(missionIds);
@@ -97,7 +97,7 @@ namespace MissionScoutManager {
         if (updateFunc) {
             s_MakeUpdateInfoHookId = updateFunc->RegisterPostHook(
                 [](UnrealScriptFunctionCallableContext&, void*) {
-                    LOG("[MissionScoutManager] MakeUpdateInfoList fired");
+                    //LOG("[MissionScoutManager] MakeUpdateInfoList fired");
                     TryScanActiveMissions();
                 }
             );

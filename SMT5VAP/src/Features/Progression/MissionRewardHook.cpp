@@ -393,18 +393,18 @@ namespace MissionRewardHook {
         if (mgrAddr) {
             s_GetManager = reinterpret_cast<FnGetManager>(mgrAddr);
         } else {
-            LOG("[MissionRewardHook] ERROR: Manager getter signature NOT FOUND");
+            WARN("[MissionRewardHook] ERROR: Manager getter signature NOT FOUND");
         }
 
         uint64_t cacheAddr = SignatureScanner::FindPattern(SIG_CACHE_LOOKUP);
         if (cacheAddr) {
             s_CacheLookup = reinterpret_cast<FnCacheLookup>(cacheAddr);
         } else {
-            LOG("[MissionRewardHook] ERROR: Cache lookup signature NOT FOUND");
+            WARN("[MissionRewardHook] ERROR: Cache lookup signature NOT FOUND");
         }
 
         if (!s_GetManager || !s_CacheLookup) {
-            LOG("[MissionRewardHook] Cannot hook — missing native function pointers");
+            WARN("[MissionRewardHook] Cannot hook — missing native function pointers");
             return;
         }
 
@@ -576,7 +576,7 @@ namespace MissionRewardHook {
                 s_ItemGetNameDetour = std::move(det);
                 LOG("[MissionRewardHook] ItemGetName direct hook installed");
             } else {
-                LOG("[MissionRewardHook] ERROR: ItemGetName direct hook FAILED");
+                WARN("[MissionRewardHook] ERROR: ItemGetName direct hook FAILED");
             }
         }
 

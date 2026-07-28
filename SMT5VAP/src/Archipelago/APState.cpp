@@ -93,31 +93,35 @@ namespace APState {
     namespace FusionRaces {
         static std::mutex GatedRacesMutex;
         static constexpr int32_t RACE_COUNT = 50;
-        static bool GatedRaces[RACE_COUNT]{};
+        static bool UnlockedRaces[RACE_COUNT]{};
 
-        void SetRaceGated(int32_t race, bool gated) {
+        void SetRaceUnlocked(int32_t race, bool gated) {
             if (race < 0 || race >= RACE_COUNT) return;
             std::lock_guard lock(GatedRacesMutex);
-            GatedRaces[race] = gated;
+            UnlockedRaces[race] = gated;
         }
 
         bool IsRaceGated(int32_t race) {
             if (race < 0 || race >= RACE_COUNT) return false;
             std::lock_guard lock(GatedRacesMutex);
-            return GatedRaces[race];
+            return !UnlockedRaces[race];
+        }
+
+        bool IsRaceUnlocked(int32_t race) {
+            return !IsRaceGated(race);
         }
 
         void Clear() {
             std::lock_guard lock(GatedRacesMutex);
             for (int32_t i = 0; i < RACE_COUNT; i++) {
-                GatedRaces[i] = false;
+                UnlockedRaces[i] = false;
             }
         }
 
         void Fill() {
             std::lock_guard lock(GatedRacesMutex);
             for (int32_t i = 0; i < RACE_COUNT; i++) {
-                GatedRaces[i] = true;
+                UnlockedRaces[i] = true;
             }
         }
     }

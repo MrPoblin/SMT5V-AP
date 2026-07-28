@@ -132,9 +132,8 @@ public:
         APState::Essences::AddEssence(544);
         APState::Essences::AddEssence(528);
         ItemBlocker::BlockItemId(661);
-        APState::FusionRaces::Fill();
-        APState::FusionRaces::SetRaceGated(5, false);
-        APState::FusionRaces::SetRaceGated(3, false);
+        APState::FusionRaces::SetRaceUnlocked(5, true);
+        APState::FusionRaces::SetRaceUnlocked(3, true);
         FusionGating::SetEssenceGatingEnabled(false);
 
         // Hooks

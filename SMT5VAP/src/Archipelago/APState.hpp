@@ -32,8 +32,9 @@ namespace APState {
     namespace FusionRaces {
         // Race gating state for Demon Fusion, driven by Archipelago data.
         // Race is an int32 index 0-49 (see RACE_ARRAY in FusionGating).
-        void SetRaceGated(int32_t race, bool gated);
+        void SetRaceUnlocked(int32_t race, bool gated);
         bool IsRaceGated(int32_t race);
+        bool IsRaceUnlocked(int32_t race);
         void Clear();
         void Fill();
     }
