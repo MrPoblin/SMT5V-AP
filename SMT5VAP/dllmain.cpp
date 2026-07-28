@@ -173,6 +173,11 @@ public:
 
         MimanHooks::Setup();
         MimanRewardHooks::Setup();
+        MimanRewardHooks::SetBlocking(false);
+        MimanRewardHooks::SetCustomText(1, L"Mothman Plushie");
+        MimanRewardHooks::SetCustomText(0, L"Fortnite Battle Pass");
+        MimanRewardHooks::SetCustomText(8, L"Gustave's Sloppy Toppy");
+
 
         AogamiHooks::Setup();
         AogamiHooks::SetReplaceItemId(0);
