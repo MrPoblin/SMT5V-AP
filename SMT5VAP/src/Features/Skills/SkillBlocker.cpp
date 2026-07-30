@@ -413,12 +413,24 @@ void Setup() {
         }
 
         // Cache BattleCommand_C from events that fire on it
-        if (name == STR("ExecuteUbergraph_BattleCommand") || name == STR("SetSkillHelpText") || name == STR("SetSkillAishouNotice")) {
+        if (name == STR("ExecuteUbergraph_BattleCommand") || name == STR("SetSkillHelpText") || name == STR("SetSkillAishouNotice") || name == STR("OnCommandListClicked")) {
             s_CachedBattleCommand = Context;
         }
 
         // ExecuteUbergraph_BattleCommand — re-block UI every frame to catch skip-turn desync
         if (name == STR("ExecuteUbergraph_BattleCommand")) {
+            s_CachedBattleCommand = Context;
+            applyBlockingToListMenu(Context, s_ApplyUsableFn);
+        }
+        
+        // OnCommandListClicked — user selects "Skill" from main command menu; skill list about to open
+        if (name == STR("OnCommandListClicked")) {
+            s_CachedBattleCommand = Context;
+            applyBlockingToListMenu(Context, s_ApplyUsableFn);
+        }
+        
+        // OnListMenuMoveCursor — fires when cursor moves within the skill sub-menu
+        if (name == STR("OnListMenuMoveCursor")) {
             applyBlockingToListMenu(Context, s_ApplyUsableFn);
         }
 
