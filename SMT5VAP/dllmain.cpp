@@ -47,6 +47,7 @@
 #include "src/Features/UI/PopupSuppression.hpp"
 #include "src/Features/UI/ItemWindow.hpp"
 #include "src/Features/UI/InfoWindow.hpp"
+#include "src/Features/UI/TitleVersionHook.hpp"
 #include "src/Archipelago/APUI.hpp"
 #include "src/Archipelago/APManager.hpp"
 #include "src/Archipelago/APState.hpp"
@@ -88,6 +89,9 @@ public:
 
         if (GameState::IsSaveLoaded() && !GameState::IsTransitioning()) {
             CompendiumTick::Poll();
+        }
+        if (GameState::MapName().contains(L"Title/LV_Title")) {
+            TitleVersionHook::Tick();
         }
         // Debug tools
         if (GetAsyncKeyState(VK_F4) & 1 && !GameState::IsTransitioning()) {
