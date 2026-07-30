@@ -41,9 +41,4 @@ namespace SkillBlocker {
     // Call before granting a skill and unset after.
     void SetGrantBypass(bool granting);
 
-    // Enable/disable discovery logging of all ProcessEvent functions.
-    // Useful for finding what actually fires during battle.
-    void SetDiscoveryLogging(bool enabled);
-    bool IsDiscoveryLoggingEnabled();
-
 } // namespace SkillBlocker

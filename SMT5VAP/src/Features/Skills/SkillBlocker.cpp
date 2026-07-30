@@ -9,7 +9,6 @@
 #include <Unreal/CoreUObject/UObject/Class.hpp>
 #include <polyhook2/Detour/x64Detour.hpp>
 #include <vector>
-#include <set>
 #include <unordered_set>
 #include <memory>
 
@@ -131,12 +130,7 @@ void SetGrantBypass(bool granting) {
 // ── Cached BattleCommand_C ──
 static UObject* s_CachedBattleCommand = nullptr;
 
-// ── Discovery logging ──
-static bool s_LogAllBattleFunctions = false;
-static std::set<std::wstring> s_LoggedFunctions;
 
-void SetDiscoveryLogging(bool enabled) { s_LogAllBattleFunctions = enabled; }
-bool IsDiscoveryLoggingEnabled() { return s_LogAllBattleFunctions; }
 
 // ── Native polyhook2 hooks ──
 // CreatePartySkillList real body (FUN_140b9a9c0)
@@ -202,9 +196,6 @@ int64_t __fastcall HkCreatePartySkillList(int64_t widget, uint32_t partyIndex) {
     int32_t count = *reinterpret_cast<int32_t*>(widget + SKILL_LIST_COUNT_OFFSET);
     uint8_t* data = *reinterpret_cast<uint8_t**>(widget + SKILL_LIST_DATA_OFFSET);
 
-    LOG(STR("[SkillBlocker] CreatePartySkillList fired! widget={:#x} partyIndex={:#x} count={}"),
-        static_cast<uint64_t>(widget), partyIndex, count);
-
     if (data && count > 0) {
         int32_t w = 0;
         for (int32_t i = 0; i < count; i++) {
@@ -233,7 +224,6 @@ static std::unique_ptr<PLH::x64Detour> s_ExecCreatePartySkillListDetour;
 static constexpr int64_t EXEC_CREATE_PARTY_SKILL_LIST_ADDR = 0x140c89760;
 
 void __fastcall HkExecCreatePartySkillList(int64_t context, int64_t frame, uint8_t* result) {
-    LOG(STR("[SkillBlocker] ExecCreatePartySkillList fired! context={:#x}"), static_cast<uint64_t>(context));
     s_ExecCreatePartySkillListOrig(context, frame, result);
 }
 
@@ -253,10 +243,17 @@ void __fastcall HkAutoBattleCommandSelect(int64_t thisPtr) {
 // This function writes the SKILL command with skillId to the party member's m_NowCmd.
 // Both manual and auto-battle go through this to commit the skill command.
 void __fastcall HkSetNowCommandSetSkill(uint64_t thisPtr, int32_t partyIndex, int32_t skillId, int32_t target) {
-    if (partyIndex >= 0 && partyIndex <= 3) {
+    // Check if we're in ITEM mode: m_SelectedCommand at +0x04E0 == 2
+    // If s_CachedBattleCommand is null (e.g., auto-battle), isItem defaults to false → blocking runs normally
+    bool isItem = false;
+    if (s_CachedBattleCommand) {
+        uint8_t selCmd = *reinterpret_cast<uint8_t*>(
+            static_cast<uint8_t*>(static_cast<void*>(s_CachedBattleCommand)) + 0x04E0);
+        isItem = (selCmd == 2);
+    }
+
+    if (!isItem && partyIndex >= 0 && partyIndex <= 3) {
         if (skillId > 0 && !IsNeverBlockSkill(skillId) && IsSkillBlockedInBattle(skillId, partyIndex)) {
-            LOG(STR("[SkillBlocker] SetNowCommandSetSkill: blocked skillId={} (icon={}) partyIndex={}, redirecting to ATTACK"),
-                skillId, CachedSkillIcon(skillId), partyIndex);
             reinterpret_cast<void(__fastcall*)(uint64_t, int32_t, int32_t)>(SET_NOW_COMMAND_SET_ATTACK_ADDR)(thisPtr, partyIndex, target);
             return;
         }
@@ -270,9 +267,6 @@ void __fastcall HkSetNowCommand(uint64_t thisPtr, int32_t partyIndex, uint8_t* c
     if (partyIndex >= 0 && partyIndex <= 3 && command && command[0] == 2) {
         int32_t skillId = *reinterpret_cast<int32_t*>(command + 8);
         if (skillId > 0 && !IsNeverBlockSkill(skillId) && IsSkillBlockedInBattle(skillId, partyIndex)) {
-            LOG(STR("[SkillBlocker] SetNowCommand: blocked skillId={} (icon={}) partyIndex={}, redirecting to ATTACK"),
-                skillId, CachedSkillIcon(skillId), partyIndex);
-            int32_t targetArea = command[2];
             int32_t targetForm = *reinterpret_cast<int32_t*>(command + 4);
             reinterpret_cast<void(__fastcall*)(uint64_t, int32_t, int32_t)>(SET_NOW_COMMAND_SET_ATTACK_ADDR)(thisPtr, partyIndex, targetForm);
             return;
@@ -367,6 +361,8 @@ void Setup() {
             static_cast<uint8_t*>(static_cast<void*>(ctx)) + 0x0460);
         if (!listMenu) return;
         uint8_t* lmBase = static_cast<uint8_t*>(static_cast<void*>(listMenu));
+        bool isSkill = *reinterpret_cast<bool*>(lmBase + 0x02C0);
+        if (!isSkill) return;
 
         uint8_t* skillData = *reinterpret_cast<uint8_t**>(lmBase + 0x02E0);
         int32_t skillCount = *reinterpret_cast<int32_t*>(lmBase + 0x02E0 + 8);
@@ -406,14 +402,6 @@ void Setup() {
         if (!Function || !Parms || s_GrantBypass) return;
         auto name = Function->GetName();
 
-        // Discovery logging
-        if (s_LogAllBattleFunctions) {
-            if (s_LoggedFunctions.find(name) == s_LoggedFunctions.end()) {
-                s_LoggedFunctions.insert(name);
-                LOG(STR("[SkillBlocker-DISC] new fn: {} ctx={:#x}"), name, reinterpret_cast<uint64_t>(Context));
-            }
-        }
-
         // Cache BattleCommand_C from events that fire on it
         if (name == STR("ExecuteUbergraph_BattleCommand") || name == STR("SetSkillHelpText") || name == STR("SetSkillAishouNotice") || name == STR("OnCommandListClicked")) {
             s_CachedBattleCommand = Context;
@@ -425,10 +413,14 @@ void Setup() {
             applyBlockingToListMenu(Context, s_ApplyUsableFn);
         }
         
-        // OnCommandListClicked — user selects "Skill" from main command menu; skill list about to open
+        // OnCommandListClicked — user selects from main command menu
+        // Only re-block if the command is SKILL (1). ITEM/other commands should pass untouched.
+        // Params[0] = E_BTL_UI_COMMAND (NONE=0, SKILL=1, ITEM=2, SUMMON=3, ...)
         if (name == STR("OnCommandListClicked")) {
             s_CachedBattleCommand = Context;
-            applyBlockingToListMenu(Context, s_ApplyUsableFn);
+            if (Parms && *reinterpret_cast<uint8_t*>(Parms) == 1) {
+                applyBlockingToListMenu(Context, s_ApplyUsableFn);
+            }
         }
         
         // OnListMenuMoveCursor — fires when cursor moves within the skill sub-menu
@@ -436,24 +428,12 @@ void Setup() {
             applyBlockingToListMenu(Context, s_ApplyUsableFn);
         }
 
-        // SetSkillHelpText / SetSkillAishouNotice — fires on cursor move in battle skill menu
+        // SetSkillHelpText / SetSkillAishouNotice — fires on cursor move in battle skill menu; cache BattleCommand_C
         if ((name == STR("SetSkillHelpText") || name == STR("SetSkillAishouNotice")) && Parms) {
-            int32_t skillId = *reinterpret_cast<int32_t*>(Parms);
-            if (skillId <= 0) return;
-            DEBUG(STR("[SkillBlocker] {} fired skillId={} icon={} blocked={}"), name, skillId, CachedSkillIcon(skillId), IsSkillCategoryBlocked(skillId));
             applyBlockingToListMenu(Context, s_ApplyUsableFn);
         }
 
-        // Intercept SetSkill on BtlListMenuPart to gray out blocked skills at source
-        if (name == STR("SetSkill") && s_SkillIdOfs >= 0 && s_UsableOfs >= 0) {
-            int32_t skillId = *reinterpret_cast<int32_t*>(static_cast<uint8_t*>(Parms) + s_SkillIdOfs);
-            if (skillId > 0 && IsSkillCategoryBlocked(skillId)) {
-                *reinterpret_cast<bool*>(static_cast<uint8_t*>(Parms) + s_UsableOfs) = false;
-                if (s_CostOKOfs >= 0) {
-                    *reinterpret_cast<bool*>(static_cast<uint8_t*>(Parms) + s_CostOKOfs) = false;
-                }
-            }
-        }
+
     };
 
     Hook::RegisterProcessEventPreCallback(cb);
@@ -495,7 +475,7 @@ void Setup() {
         reinterpret_cast<uint64_t*>(&s_SetNowCommandOrig),
         s_SetNowCommandDetour, "SetNowCommand");
 
-    LOG(STR("[SkillBlocker] Setup complete (discovery logging={})"), s_LogAllBattleFunctions ? STR("ON") : STR("OFF"));
+    LOG(STR("[SkillBlocker] Setup complete"));
 }
 
 void BuildCache() {
