@@ -253,11 +253,13 @@ void __fastcall HkAutoBattleCommandSelect(int64_t thisPtr) {
 // This function writes the SKILL command with skillId to the party member's m_NowCmd.
 // Both manual and auto-battle go through this to commit the skill command.
 void __fastcall HkSetNowCommandSetSkill(uint64_t thisPtr, int32_t partyIndex, int32_t skillId, int32_t target) {
-    if (skillId > 0 && !IsNeverBlockSkill(skillId) && IsSkillBlockedInBattle(skillId, partyIndex)) {
-        LOG(STR("[SkillBlocker] SetNowCommandSetSkill: blocked skillId={} (icon={}) partyIndex={}, redirecting to ATTACK"),
-            skillId, CachedSkillIcon(skillId), partyIndex);
-        reinterpret_cast<void(__fastcall*)(uint64_t, int32_t, int32_t)>(SET_NOW_COMMAND_SET_ATTACK_ADDR)(thisPtr, partyIndex, target);
-        return;
+    if (partyIndex >= 0 && partyIndex <= 3) {
+        if (skillId > 0 && !IsNeverBlockSkill(skillId) && IsSkillBlockedInBattle(skillId, partyIndex)) {
+            LOG(STR("[SkillBlocker] SetNowCommandSetSkill: blocked skillId={} (icon={}) partyIndex={}, redirecting to ATTACK"),
+                skillId, CachedSkillIcon(skillId), partyIndex);
+            reinterpret_cast<void(__fastcall*)(uint64_t, int32_t, int32_t)>(SET_NOW_COMMAND_SET_ATTACK_ADDR)(thisPtr, partyIndex, target);
+            return;
+        }
     }
     s_SetNowCommandSetSkillOrig(thisPtr, partyIndex, skillId, target);
 }
@@ -265,7 +267,7 @@ void __fastcall HkSetNowCommandSetSkill(uint64_t thisPtr, int32_t partyIndex, in
 // SetNowCommand hook — backup interception for cases where the command is set via FBtlCommand struct.
 // If the command is SKILL (m_Command==2) with a blocked skill ID, overwrite to ATTACK.
 void __fastcall HkSetNowCommand(uint64_t thisPtr, int32_t partyIndex, uint8_t* command) {
-    if (command && command[0] == 2) {
+    if (partyIndex >= 0 && partyIndex <= 3 && command && command[0] == 2) {
         int32_t skillId = *reinterpret_cast<int32_t*>(command + 8);
         if (skillId > 0 && !IsNeverBlockSkill(skillId) && IsSkillBlockedInBattle(skillId, partyIndex)) {
             LOG(STR("[SkillBlocker] SetNowCommand: blocked skillId={} (icon={}) partyIndex={}, redirecting to ATTACK"),
