@@ -3,6 +3,7 @@
 #include "src/Debug/NoEncounterMode.hpp"
 #include "src/Features/Progression/EventFlags.hpp"
 #include "src/Features/Progression/MissionRewardHook.hpp"
+#include "src/Archipelago/APState.hpp"
 #include <format>
 
 using namespace RC;
@@ -128,4 +129,57 @@ void RenderDebugTab(CppUserModBase* instance)
             MissionRewardHook::ClearExceptions();
         }
     }
+
+    ImGui::Separator();
+    ImGui::Text("Skill Category Blocker");
+
+    // Category toggles
+    static const char* categoryNames[] = {
+        "Physical", "Fire", "Ice", "Electric", "Force",
+        "Light", "Dark", "Almighty", "Ailment", "Support", "Recovery"
+    };
+
+    for (int i = 0; i < APState::SkillCategories::CATEGORY_COUNT; i++) {
+        bool blocked = APState::SkillCategories::IsCategoryBlocked(i);
+        if (ImGui::Checkbox(categoryNames[i], &blocked)) {
+            APState::SkillCategories::SetCategoryBlocked(i, blocked);
+        }
+        if (i < 5) ImGui::SameLine(); // 2 rows of 6
+    }
+
+    // Scope selector
+    ImGui::Spacing();
+    auto scope = APState::SkillCategories::GetScope();
+    int scopeInt = static_cast<int>(scope);
+    ImGui::Text("Scope:");
+    if (ImGui::RadioButton("Both##skill", scopeInt == 0)) {
+        APState::SkillCategories::SetScope(APState::SkillCategories::Scope::Both);
+    }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Protag Only##skill", scopeInt == 1)) {
+        APState::SkillCategories::SetScope(APState::SkillCategories::Scope::ProtagOnly);
+    }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Demon Only##skill", scopeInt == 2)) {
+        APState::SkillCategories::SetScope(APState::SkillCategories::Scope::DemonOnly);
+    }
+
+    // Quick actions
+    ImGui::Spacing();
+    if (ImGui::Button("Block All##skill")) {
+        for (int i = 0; i < APState::SkillCategories::CATEGORY_COUNT; i++) {
+            APState::SkillCategories::SetCategoryBlocked(i, true);
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Unblock All##skill")) {
+        APState::SkillCategories::Clear();
+    }
+
+    // Status display
+    int blockedCount = 0;
+    for (int i = 0; i < APState::SkillCategories::CATEGORY_COUNT; i++) {
+        if (APState::SkillCategories::IsCategoryBlocked(i)) blockedCount++;
+    }
+    ImGui::Text("Blocked categories: %d / %d", blockedCount, APState::SkillCategories::CATEGORY_COUNT);
 }

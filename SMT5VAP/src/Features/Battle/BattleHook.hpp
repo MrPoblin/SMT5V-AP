@@ -17,6 +17,10 @@ void OnVictory(VictoryCallback cb);
 void OnAllyDowned(AllyDownedCallback cb);
 void SetSuppressItems(bool suppress);
 
+// Resolves the protagonist's current party index via the C++ base class
+// UFunction GetHeroIndex(). Returns -1 if it could not be resolved.
+int32_t ResolveHeroIndex();
+
 // True if the given devil belongs to the Mitama group (E_GROUP_ID_MITAMA).
 bool IsMitamaDevil(int32_t devilId);
 

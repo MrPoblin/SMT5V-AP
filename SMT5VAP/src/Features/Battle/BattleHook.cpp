@@ -319,4 +319,17 @@ void SetSuppressMitamaItems(bool suppress) {
     }
 }
 
+int32_t ResolveHeroIndex() {
+    // Find the active BattlePartySystemComponentBase instance
+    std::vector<UObject*> objs;
+    UObjectGlobals::FindAllOf(STR("BattlePartySystemComponentBase"), objs);
+    for (int32_t i = static_cast<int32_t>(objs.size()) - 1; i >= 0; --i) {
+        UObject* o = objs[i];
+        if (o && o->GetWorld()) {
+            return ResolveHeroIndex(o);
+        }
+    }
+    return -1;
+}
+
 }

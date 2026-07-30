@@ -12,6 +12,7 @@
 #include "src/Debug/NoEncounterMode.hpp"
 #include "src/Features/Battle/BattleHook.hpp"
 #include "src/Features/Battle/DeathFunctions.hpp"
+#include "src/Features/Skills/SkillBlocker.hpp"
 #include "src/Features/Collections/ChestHooks.hpp"
 #include "src/Features/Collections/VendingHooks.hpp"
 #include "src/Features/Collections/GloryHooks.hpp"
@@ -132,9 +133,11 @@ public:
         APState::Essences::AddEssence(544);
         APState::Essences::AddEssence(528);
         ItemBlocker::BlockItemId(661);
+        FusionGating::SetEnabled(false);
         APState::FusionRaces::SetRaceUnlocked(5, true);
         APState::FusionRaces::SetRaceUnlocked(3, true);
         FusionGating::SetEssenceGatingEnabled(false);
+        APState::SkillCategories::SetCategoryBlocked(0, true);
 
         // Hooks
         GameState::SetupMapLoadHook();
@@ -166,6 +169,7 @@ public:
         BattleHook::Setup();
         BattleHook::SetSuppressItems(false);
         BattleHook::SetSuppressMitamaItems(false);
+
 
         GloryHooks::Setup();
         GloryHooks::SetBlockGlory(true);
@@ -240,6 +244,9 @@ public:
                     ItemLimits::Raise(255);
                     MissionScoutManager::Rescan();
                     FusionGating::Setup();
+                    SkillBlocker::Setup();
+
+                    SkillBlocker::BuildCache();
 
                     onceAfterSaveInitialized = true;
                 }

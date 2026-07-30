@@ -11,6 +11,7 @@ namespace APState {
         Essences::Clear();
         Miracles::Clear();
         FusionRaces::Clear();
+        SkillCategories::Clear();
     }
 
     namespace Locations {
@@ -123,6 +124,45 @@ namespace APState {
             for (int32_t i = 0; i < RACE_COUNT; i++) {
                 UnlockedRaces[i] = true;
             }
+        }
+    }
+
+    namespace SkillCategories {
+        static std::mutex SkillCatMutex;
+        static bool BlockedCategories[CATEGORY_COUNT]{};
+        static Scope CurrentScope{Scope::Both};
+
+        void SetCategoryBlocked(int32_t iconCategory, bool blocked) {
+            if (iconCategory < 0 || iconCategory >= CATEGORY_COUNT) return;
+            std::lock_guard lock(SkillCatMutex);
+            BlockedCategories[iconCategory] = blocked;
+            LOG("[SkillCategories] Category {} ({})", iconCategory,
+                blocked ? STR("blocked") : STR("unblocked"));
+        }
+
+        bool IsCategoryBlocked(int32_t iconCategory) {
+            if (iconCategory < 0 || iconCategory >= CATEGORY_COUNT) return false;
+            std::lock_guard lock(SkillCatMutex);
+            return BlockedCategories[iconCategory];
+        }
+
+        void SetScope(Scope scope) {
+            std::lock_guard lock(SkillCatMutex);
+            CurrentScope = scope;
+            LOG("[SkillCategories] Scope set to {}", static_cast<int32_t>(scope));
+        }
+
+        Scope GetScope() {
+            std::lock_guard lock(SkillCatMutex);
+            return CurrentScope;
+        }
+
+        void Clear() {
+            std::lock_guard lock(SkillCatMutex);
+            for (int32_t i = 0; i < CATEGORY_COUNT; i++) {
+                BlockedCategories[i] = false;
+            }
+            CurrentScope = Scope::Both;
         }
     }
 }
