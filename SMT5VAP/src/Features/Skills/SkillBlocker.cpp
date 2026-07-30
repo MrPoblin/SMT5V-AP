@@ -10,6 +10,7 @@
 #include <polyhook2/Detour/x64Detour.hpp>
 #include <vector>
 #include <unordered_set>
+#include <unordered_map>
 #include <memory>
 
 using namespace RC;
@@ -355,6 +356,70 @@ void Setup() {
         }
     }
 
+    // Resolve BIESet*Panel UFunction param offsets (camp graying)
+    struct BiePanelInfo { int32 skillIdOfs; int32 useSkillOfs; };
+    static std::unordered_map<std::wstring, BiePanelInfo> s_BiePanelFns;
+
+    auto resolveBie = [&](const std::wstring& name, const wchar_t* logName) {
+        if (s_BiePanelFns.count(name)) return;
+        std::vector<std::wstring> paths = {
+            L"/Script/Project.CampSkillCtrlBase:" + name,
+            L"/Script/Project.StatusSkillCtrlBase:" + name,
+            L"/Game/Blueprints/UI/Camp/Skill/BP_CampSkillCtrl.BP_CampSkillCtrl_C:" + name,
+            name,
+        };
+        for (auto& p : paths) {
+            auto* fn = UObjectGlobals::FindObject<UFunction>(nullptr, p.c_str());
+            if (fn) {
+                int32 idOfs = -1, useOfs = -1;
+                auto* idProp = fn->GetPropertyByName(STR("InSkillId"));
+                auto* useProp = fn->GetPropertyByName(STR("InUseSkill"));
+                if (idProp) idOfs = idProp->GetOffset_ForInternal();
+                if (useProp) useOfs = useProp->GetOffset_ForInternal();
+                s_BiePanelFns[name] = {idOfs, useOfs};
+                LOG(STR("[SkillBlocker] {} found via: {} SkillId@{} UseSkill@{}"), logName, p, idOfs, useOfs);
+                return;
+            }
+        }
+        LOG(STR("[SkillBlocker] {} NOT FOUND"), logName);
+    };
+
+    resolveBie(L"BIESetSkillPanel", STR("BIESetSkillPanel"));
+    resolveBie(L"BIESetUniquePanel", STR("BIESetUniquePanel"));
+    resolveBie(L"BIESetMagatsuhiPanel", STR("BIESetMagatsuhiPanel"));
+
+    // Also resolve BIESetSkillNameColor (fires after BIESetSkillPanel, resets text color)
+    static int32 s_BieNameColor_IndexOfs = -1;
+    static int32 s_BieNameColor_UseSkillOfs = -1;
+    if (s_BieNameColor_IndexOfs < 0) {
+        for (auto& p : {
+            std::wstring(L"/Script/Project.CampSkillCtrlBase:BIESetSkillNameColor"),
+            std::wstring(L"/Script/Project.StatusSkillCtrlBase:BIESetSkillNameColor"),
+            std::wstring(L"BIESetSkillNameColor"),
+        }) {
+            auto* fn = UObjectGlobals::FindObject<UFunction>(nullptr, p.c_str());
+            if (fn) {
+                auto* idxProp = fn->GetPropertyByName(STR("InIndex"));
+                auto* useProp = fn->GetPropertyByName(STR("InUseSkill"));
+                if (idxProp) s_BieNameColor_IndexOfs = idxProp->GetOffset_ForInternal();
+                if (useProp) s_BieNameColor_UseSkillOfs = useProp->GetOffset_ForInternal();
+                LOG(STR("[SkillBlocker] BIESetSkillNameColor found via: {} Index@{} UseSkill@{}"), p, s_BieNameColor_IndexOfs, s_BieNameColor_UseSkillOfs);
+                break;
+            }
+        }
+        if (s_BieNameColor_IndexOfs < 0) {
+            LOG(STR("[SkillBlocker] BIESetSkillNameColor NOT FOUND"));
+        }
+    }
+
+    // Track panelIndex → skillId per Context (for BIESetSkillNameColor state tracking)
+    // Updated on EVERY BIESetSkillPanel call so reused panel indices get the correct skillId
+    static std::unordered_map<uint64_t, std::unordered_map<int32_t, int32_t>> s_PanelSkills;
+
+    // Temp camp discovery — log every BIE/Camp/Status/Unite function once
+    static std::unordered_set<std::wstring> s_CampDiscovered;
+    static bool s_CampDiscoveryOn = true;
+
     // Helper: apply blocking to a BattleCommand_C's skill list
     auto applyBlockingToListMenu = [](UObject* ctx, UFunction* applyUsable) {
         UObject* listMenu = *reinterpret_cast<UObject**>(
@@ -426,6 +491,46 @@ void Setup() {
         // OnListMenuMoveCursor — fires when cursor moves within the skill sub-menu
         if (name == STR("OnListMenuMoveCursor")) {
             applyBlockingToListMenu(Context, s_ApplyUsableFn);
+        }
+
+        // Camp graying: intercept BIESetSkillPanel / BIESetUniquePanel / BIESetMagatsuhiPanel
+        {
+            auto it = s_BiePanelFns.find(name);
+            if (it != s_BiePanelFns.end() && it->second.skillIdOfs >= 0 && it->second.useSkillOfs >= 0 && Parms) {
+                int32_t skillId = *reinterpret_cast<int32_t*>(static_cast<uint8_t*>(Parms) + it->second.skillIdOfs);
+                int32_t panelIndex = *reinterpret_cast<int32_t*>(Parms);
+                // Always store panelIndex -> skillId mapping (updates on reuse)
+                if (skillId > 0) s_PanelSkills[reinterpret_cast<uint64_t>(Context)][panelIndex] = skillId;
+                if (skillId > 0 && IsSkillCategoryBlocked(skillId)) {
+                    *reinterpret_cast<int32_t*>(static_cast<uint8_t*>(Parms) + it->second.useSkillOfs) = 0;
+                }
+            }
+        }
+
+        // BIESetSkillNameColor — fires AFTER BIESetSkillPanel and resets name color
+        // Check stored skillId for the panel index: only override if that skill is blocked
+        if (name == STR("BIESetSkillNameColor") && s_BieNameColor_IndexOfs >= 0 && s_BieNameColor_UseSkillOfs >= 0 && Parms) {
+            int32_t panelIndex = *reinterpret_cast<int32_t*>(static_cast<uint8_t*>(Parms) + s_BieNameColor_IndexOfs);
+            auto ctxIt = s_PanelSkills.find(reinterpret_cast<uint64_t>(Context));
+            if (ctxIt != s_PanelSkills.end()) {
+                auto skillIt = ctxIt->second.find(panelIndex);
+                if (skillIt != ctxIt->second.end() && skillIt->second > 0 && IsSkillCategoryBlocked(skillIt->second)) {
+                    *reinterpret_cast<int32_t*>(static_cast<uint8_t*>(Parms) + s_BieNameColor_UseSkillOfs) = 0;
+                }
+            }
+        }
+
+        // Temp camp discovery — log unknown BIE/Camp/Status/Unite/SkillPanel functions once
+        if (s_CampDiscoveryOn && s_CampDiscovered.find(name) == s_CampDiscovered.end()) {
+            bool isRelevant = (name.find(STR("BIE")) == 0 || name.find(STR("Camp")) == 0 ||
+                name.find(STR("Status")) == 0 || name.find(STR("Unite")) == 0 ||
+                name.find(STR("SkillPanel")) == 0 || name.find(STR("SkillList")) == 0 ||
+                name.find(STR("TopMenu")) == 0 || name.find(STR("CharaPanel")) == 0 ||
+                name.find(STR("Inherit")) == 0 || name.find(STR("Utsusemi")) == 0);
+            if (isRelevant) {
+                s_CampDiscovered.insert(name);
+                LOG(STR("[SkillBlocker-DISC] {} on {:#x}"), name, reinterpret_cast<uint64_t>(Context));
+            }
         }
 
         // SetSkillHelpText / SetSkillAishouNotice — fires on cursor move in battle skill menu; cache BattleCommand_C
