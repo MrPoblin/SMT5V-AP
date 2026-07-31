@@ -2,5 +2,6 @@
 
 namespace TitleVersionHook
 {
+    void Setup();
     void Tick();
 }

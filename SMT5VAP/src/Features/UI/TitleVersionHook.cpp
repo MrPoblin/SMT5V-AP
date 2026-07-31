@@ -17,27 +17,61 @@ namespace TitleVersionHook
     static auto s_LastPollTime = std::chrono::steady_clock::now();
     static constexpr auto POLL_INTERVAL = std::chrono::seconds(1);
 
+    static UClass* s_WidgetClass = nullptr;
+    static UFunction* s_SetTextFunc = nullptr;
+    static UObject* s_CachedTextBlock = nullptr;
+
     static void SetVersionText()
     {
-        auto numElements = FUObjectArray::GetNumElements();
-        for (int32_t i = 0; i < numElements; i++)
+        if (!s_CachedTextBlock)
         {
-            auto* item = FUObjectArray::IndexToObject(i);
-            if (!item) continue;
-            auto* obj = item->GetUObject();
-            if (!obj || obj->HasAnyFlags(RF_ClassDefaultObject)) continue;
-            if (obj->GetClassPrivate()->GetName() != STR("WB_TitleMainMenu_2_C")) continue;
+            auto numElements = FUObjectArray::GetNumElements();
+            for (int32_t i = 0; i < numElements; i++)
+            {
+                auto* item = FUObjectArray::IndexToObject(i);
+                if (!item) continue;
+                auto* obj = item->GetUObject();
+                if (!obj || obj->HasAnyFlags(RF_ClassDefaultObject)) continue;
+                if (s_WidgetClass)
+                {
+                    if (obj->GetClassPrivate() != s_WidgetClass) continue;
+                }
+                else if (obj->GetClassPrivate()->GetName() != STR("WB_TitleMainMenu_2_C"))
+                {
+                    continue;
+                }
 
-            auto** textBlockPtr = reinterpret_cast<UObject**>(reinterpret_cast<uint8*>(obj) + 0x0328);
-            if (!textBlockPtr || !*textBlockPtr) continue;
+                auto** textBlockPtr = reinterpret_cast<UObject**>(reinterpret_cast<uint8*>(obj) + 0x0328);
+                if (!textBlockPtr || !*textBlockPtr) continue;
 
-            auto* setTextFn = UObjectGlobals::FindObject<UFunction>(nullptr, STR("/Script/UMG.TextBlock:SetText"));
-            if (!setTextFn) continue;
+                s_WidgetClass = obj->GetClassPrivate();
+                s_CachedTextBlock = *textBlockPtr;
+                LOG("[TitleVersionHook] cached TextVersionNumber at 0x{:X}", uintptr_t(s_CachedTextBlock));
+                break;
+            }
 
-            struct { FText Text; } params;
-            params.Text = FText(VERSION_TEXT);
-            (*textBlockPtr)->ProcessEvent(setTextFn, &params);
+            if (!s_CachedTextBlock) return;
         }
+
+        if (!s_SetTextFunc)
+            s_SetTextFunc = UObjectGlobals::FindObject<UFunction>(nullptr, STR("/Script/UMG.TextBlock:SetText"));
+        if (!s_SetTextFunc)
+        {
+            LOG("[TitleVersionHook] failed to find UMG.TextBlock:SetText");
+            return;
+        }
+
+        struct { FText Text; } params;
+        params.Text = FText(VERSION_TEXT);
+        s_CachedTextBlock->ProcessEvent(s_SetTextFunc, &params);
+    }
+
+    void Setup() {
+        GameState::OnMapChanged([](const std::wstring& MapName) {
+            s_WidgetClass = nullptr;
+            s_SetTextFunc = nullptr;
+            s_CachedTextBlock = nullptr;
+        });
     }
 
     void Tick() {

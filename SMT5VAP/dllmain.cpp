@@ -148,6 +148,8 @@ public:
         GameState::SetupTransitionHooks();
         GameState::SetupSaveLoadedHook();
 
+        TitleVersionHook::Setup();
+
         ItemBlocker::Setup();
         ItemBlocker::SetBlockAll(false);
 
