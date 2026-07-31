@@ -1,6 +1,8 @@
 #include "TitleVersionHook.hpp"
 #include "src/Log/Log.hpp"
 #include "src/GameState.hpp"
+#include "src/Archipelago/APManager.hpp"
+#include "src/Helper/StringHelper.hpp"
 #include <Unreal/FText.hpp>
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/UObjectArray.hpp>
@@ -12,7 +14,8 @@ using namespace RC::Unreal;
 
 namespace TitleVersionHook
 {
-    constexpr std::wstring_view VERSION_TEXT{L"SMT5VAP 0.1.0"};
+    const std::wstring VERSION{L"SMT5VAP 0.1.0"};
+    std::wstring VersionText{};
 
     static auto s_LastPollTime = std::chrono::steady_clock::now();
     static constexpr auto POLL_INTERVAL = std::chrono::seconds(1);
@@ -62,7 +65,7 @@ namespace TitleVersionHook
         }
 
         struct { FText Text; } params;
-        params.Text = FText(VERSION_TEXT);
+        params.Text = FText(VersionText);
         s_CachedTextBlock->ProcessEvent(s_SetTextFunc, &params);
     }
 
@@ -79,6 +82,7 @@ namespace TitleVersionHook
         if (now - s_LastPollTime < POLL_INTERVAL) return;
         s_LastPollTime = now;
 
+        VersionText = VERSION + L"\n" + StringHelper::ToWide(AP::getAPConnectedStatus());
         SetVersionText();
     }
 }
