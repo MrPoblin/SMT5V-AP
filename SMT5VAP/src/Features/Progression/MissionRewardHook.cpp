@@ -1,6 +1,6 @@
 #include "MissionRewardHook.hpp"
 #include "src/Log/Log.hpp"
-#include "src/HookHelper.hpp"
+#include "src/Helper/HookHelper.hpp"
 #include <polyhook2/Detour/x64Detour.hpp>
 #include <polyhook2/Misc.hpp>
 #include <Unreal/UObjectGlobals.hpp>

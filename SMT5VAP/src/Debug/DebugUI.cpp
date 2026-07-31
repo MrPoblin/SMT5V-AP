@@ -4,6 +4,7 @@
 #include "src/Features/Progression/EventFlags.hpp"
 #include "src/Features/Progression/MissionRewardHook.hpp"
 #include "src/Archipelago/APState.hpp"
+#include "src/Helper/StringHelper.hpp"
 #include <format>
 
 using namespace RC;
@@ -13,17 +14,11 @@ static int s_inputFlagId{0};
 static int s_inputMapEventId{0};
 static bool s_noEncounter{false};
 
-static StringType ToWide(const char* s) {
-    StringType out;
-    if (s) for (; *s; ++s) out.push_back(static_cast<wchar_t>(*s));
-    return out;
-}
-
 void RenderDebugTab(CppUserModBase* instance)
 {
     ImGui::InputText("Flag Name", s_inputFlagName, IM_ARRAYSIZE(s_inputFlagName));
 
-    StringType flagName = ToWide(s_inputFlagName);
+    StringType flagName = StringHelper::ToWide(s_inputFlagName);
     if (ImGui::Button("Set true"))
     {
         EventFlags::Set(flagName, true);

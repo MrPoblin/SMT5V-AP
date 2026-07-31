@@ -1,7 +1,7 @@
 #include "StatueSurvey.hpp"
 #include "src/Log/Log.hpp"
 #include "src/GameState.hpp"
-#include "src/HookHelper.hpp"
+#include "src/Helper/HookHelper.hpp"
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/AActor.hpp>
 #include <Unreal/World.hpp>

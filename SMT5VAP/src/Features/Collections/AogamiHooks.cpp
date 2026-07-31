@@ -1,7 +1,7 @@
 #include "AogamiHooks.hpp"
 #include "src/Features/UI/PopupSuppression.hpp"
 #include "src/Log/Log.hpp"
-#include "src/HookHelper.hpp"
+#include "src/Helper/HookHelper.hpp"
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/UFunctionStructs.hpp>
 #include <Unreal/CoreUObject/UObject/UnrealType.hpp>

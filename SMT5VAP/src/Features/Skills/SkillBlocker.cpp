@@ -1,5 +1,5 @@
 #include "SkillBlocker.hpp"
-#include "src/HookHelper.hpp"
+#include "src/Helper/HookHelper.hpp"
 #include "src/Archipelago/APState.hpp"
 #include "src/Log/Log.hpp"
 #include <Unreal/UObjectGlobals.hpp>
@@ -463,7 +463,7 @@ void Setup() {
         }
     };
 
-    Hook::ProcessEventCallback cb = [applyBlockingToListMenu](UObject* Context, UFunction* Function, void* Parms) {
+    Hook::ProcessEventCallbackWithData cb = [applyBlockingToListMenu](Hook::TCallbackIterationData<void>&, UObject* Context, UFunction* Function, void* Parms) {
         if (!Function || !Parms || s_GrantBypass) return;
         auto name = Function->GetName();
 
@@ -541,7 +541,7 @@ void Setup() {
 
     };
 
-    Hook::RegisterProcessEventPreCallback(cb);
+    Hook::RegisterProcessEventPreCallback(cb, Hook::FCallbackOptions{});
 
     // ── Install native polyhook2 hooks ──
     // CreatePartySkillList real body — the function that builds the battle skill list

@@ -1,5 +1,5 @@
 #include "MiracleHooks.hpp"
-#include "src/HookHelper.hpp"
+#include "src/Helper/HookHelper.hpp"
 #include "src/Archipelago/APState.hpp"
 #include "src/Log/Log.hpp"
 #include <cstdint>

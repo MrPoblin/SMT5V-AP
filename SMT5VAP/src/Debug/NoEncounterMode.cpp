@@ -1,5 +1,5 @@
 #include "NoEncounterMode.hpp"
-#include "src/HookHelper.hpp"
+#include "src/Helper/HookHelper.hpp"
 #include "src/Log/Log.hpp"
 #include "src/GameState.hpp"
 #include <Unreal/UObjectGlobals.hpp>

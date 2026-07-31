@@ -1,5 +1,5 @@
 #include "BattleHook.hpp"
-#include "src/HookHelper.hpp"
+#include "src/Helper/HookHelper.hpp"
 #include "src/Log/Log.hpp"
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/UFunctionStructs.hpp>

@@ -1,5 +1,5 @@
 #include "LevelUpHook.hpp"
-#include "src/HookHelper.hpp"
+#include "src/Helper/HookHelper.hpp"
 #include "src/Features/Party/LevelFunctions.hpp"
 #include "src/Log/Log.hpp"
 #include <mutex>

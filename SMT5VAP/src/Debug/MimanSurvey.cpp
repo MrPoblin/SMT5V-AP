@@ -1,7 +1,7 @@
 #include "MimanSurvey.hpp"
 #include "src/Log/Log.hpp"
 #include "src/GameState.hpp"
-#include "src/HookHelper.hpp"
+#include "src/Helper/HookHelper.hpp"
 #include "src/Features/Collections/MimanHooks.hpp"
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/AActor.hpp>

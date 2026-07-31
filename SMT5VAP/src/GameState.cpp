@@ -1,5 +1,5 @@
 #include "GameState.hpp"
-#include "HookHelper.hpp"
+#include "src/Helper/HookHelper.hpp"
 #include "src/Log/Log.hpp"
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/World.hpp>
