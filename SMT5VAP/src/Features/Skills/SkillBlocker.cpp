@@ -209,7 +209,6 @@ int64_t __fastcall HkCreatePartySkillList(int64_t widget, uint32_t partyIndex) {
         }
         if (w < count) {
             *reinterpret_cast<int32_t*>(widget + SKILL_LIST_COUNT_OFFSET) = w;
-            LOG("[SkillBlocker] Removed {} blocked skills from CreatePartySkillList!", count - w);
         }
     }
 
@@ -236,7 +235,6 @@ void __fastcall HkAutoBattleSkillSelect(int64_t thisPtr, int32_t skillId) {
 }
 
 void __fastcall HkAutoBattleCommandSelect(int64_t thisPtr) {
-    LOG(STR("[SkillBlocker] AutoBattleCommandSelect NATIVE HOOK FIRED! thisPtr={:#x}"), static_cast<uint64_t>(thisPtr));
     s_AutoBattleCommandSelectOrig(thisPtr);
 }
 
@@ -416,10 +414,6 @@ void Setup() {
     // Updated on EVERY BIESetSkillPanel call so reused panel indices get the correct skillId
     static std::unordered_map<uint64_t, std::unordered_map<int32_t, int32_t>> s_PanelSkills;
 
-    // Temp camp discovery — log every BIE/Camp/Status/Unite function once
-    static std::unordered_set<std::wstring> s_CampDiscovered;
-    static bool s_CampDiscoveryOn = true;
-
     // Helper: apply blocking to a BattleCommand_C's skill list
     auto applyBlockingToListMenu = [](UObject* ctx, UFunction* applyUsable) {
         UObject* listMenu = *reinterpret_cast<UObject**>(
@@ -517,19 +511,6 @@ void Setup() {
                 if (skillIt != ctxIt->second.end() && skillIt->second > 0 && IsSkillCategoryBlocked(skillIt->second)) {
                     *reinterpret_cast<int32_t*>(static_cast<uint8_t*>(Parms) + s_BieNameColor_UseSkillOfs) = 0;
                 }
-            }
-        }
-
-        // Temp camp discovery — log unknown BIE/Camp/Status/Unite/SkillPanel functions once
-        if (s_CampDiscoveryOn && s_CampDiscovered.find(name) == s_CampDiscovered.end()) {
-            bool isRelevant = (name.find(STR("BIE")) == 0 || name.find(STR("Camp")) == 0 ||
-                name.find(STR("Status")) == 0 || name.find(STR("Unite")) == 0 ||
-                name.find(STR("SkillPanel")) == 0 || name.find(STR("SkillList")) == 0 ||
-                name.find(STR("TopMenu")) == 0 || name.find(STR("CharaPanel")) == 0 ||
-                name.find(STR("Inherit")) == 0 || name.find(STR("Utsusemi")) == 0);
-            if (isRelevant) {
-                s_CampDiscovered.insert(name);
-                LOG(STR("[SkillBlocker-DISC] {} on {:#x}"), name, reinterpret_cast<uint64_t>(Context));
             }
         }
 
