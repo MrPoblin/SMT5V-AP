@@ -82,9 +82,15 @@ namespace TitleVersion
         if (now - s_LastPollTime < POLL_INTERVAL) return;
         s_LastPollTime = now;
 
+
         VersionText = std::wstring(ModInfo::Name) + L" " + std::wstring(ModInfo::Version) +
             L"\nby " + std::wstring(ModInfo::Authors) +
             L"\n" + StringHelper::ToWide(APManager::getAPConnectedStatus());
+
+        if (!APManager::getAPConnected()) {
+            VersionText += L"\nConnect before loading the game!";
+        }
+
         SetVersionText();
     }
 }
