@@ -11,7 +11,7 @@ static char s_inputPassword[256]{""};
 
 void RenderAPTab(CppUserModBase* instance)
 {
-    ImGui::Text("Restart the game after completing a previous run");
+    ImGui::BeginChild("APTabScroll", ImVec2(0, 0), ImGuiChildFlags_None);
 
     ImGui::InputText("Address and Port", s_inputIP, IM_ARRAYSIZE(s_inputIP));
     ImGui::InputText("Slot Name (Player)", s_inputSlotName, IM_ARRAYSIZE(s_inputSlotName));
@@ -19,12 +19,14 @@ void RenderAPTab(CppUserModBase* instance)
 
     if (ImGui::Button("Connect"))
     {
-        AP::APInitialize(s_inputIP, s_inputSlotName, s_inputPassword);
+        APManager::APInitialize(s_inputIP, s_inputSlotName, s_inputPassword);
     }
     ImGui::SameLine();
     if (ImGui::Button("Disconnect"))
     {
-        AP::Shutdown();
+        APManager::Shutdown();
     }
-    ImGui::Text(std::format("AP Status: {}", AP::getAPConnectedStatus()).c_str());
+    ImGui::Text(std::format("AP Status: {}", APManager::getAPConnectedStatus()).c_str());
+
+    ImGui::EndChild();
 }

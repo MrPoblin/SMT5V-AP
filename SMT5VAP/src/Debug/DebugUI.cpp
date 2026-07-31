@@ -16,6 +16,8 @@ static bool s_noEncounter{false};
 
 void RenderDebugTab(CppUserModBase* instance)
 {
+    ImGui::BeginChild("APTabScroll", ImVec2(0, 0), ImGuiChildFlags_None);
+
     ImGui::InputText("Flag Name", s_inputFlagName, IM_ARRAYSIZE(s_inputFlagName));
 
     StringType flagName = StringHelper::ToWide(s_inputFlagName);
@@ -139,7 +141,7 @@ void RenderDebugTab(CppUserModBase* instance)
         if (ImGui::Checkbox(categoryNames[i], &blocked)) {
             APState::SkillCategories::SetCategoryBlocked(i, blocked);
         }
-        if (i < 5) ImGui::SameLine(); // 2 rows of 6
+        ImGui::SameLine();
     }
 
     // Scope selector
@@ -177,4 +179,7 @@ void RenderDebugTab(CppUserModBase* instance)
         if (APState::SkillCategories::IsCategoryBlocked(i)) blockedCount++;
     }
     ImGui::Text("Blocked categories: %d / %d", blockedCount, APState::SkillCategories::CATEGORY_COUNT);
+
+    ImGui::EndChild();
+
 }

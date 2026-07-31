@@ -1,6 +1,6 @@
 #pragma once
 
-namespace TitleVersionHook
+namespace TitleVersion
 {
     void Setup();
     void Tick();

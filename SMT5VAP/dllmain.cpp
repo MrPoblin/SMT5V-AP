@@ -48,7 +48,7 @@
 #include "src/Features/UI/PopupSuppression.hpp"
 #include "src/Features/UI/ItemWindow.hpp"
 #include "src/Features/UI/InfoWindow.hpp"
-#include "src/Features/UI/TitleVersionHook.hpp"
+#include "src/Features/UI/TitleVersion.hpp"
 #include "src/Archipelago/APUI.hpp"
 #include "src/Archipelago/APManager.hpp"
 #include "src/Archipelago/APState.hpp"
@@ -84,7 +84,7 @@ public:
 
     auto on_update() -> void override
     {
-        AP::CheckAPConnection();
+        APManager::CheckAPConnection();
         ItemWindow::Update();
         InfoWindow::Update();
 
@@ -92,7 +92,7 @@ public:
             CompendiumTick::Poll();
         }
         if (GameState::MapName().contains(L"Title/LV_Title")) {
-            TitleVersionHook::Tick();
+            TitleVersion::Tick();
         }
         // Debug tools
         if (GetAsyncKeyState(VK_F4) & 1 && !GameState::IsTransitioning()) {
@@ -149,7 +149,7 @@ public:
         GameState::SetupTransitionHooks();
         GameState::SetupSaveLoadedHook();
 
-        TitleVersionHook::Setup();
+        TitleVersion::Setup();
 
         ItemBlocker::Setup();
         ItemBlocker::SetBlockAll(false);

@@ -1,4 +1,4 @@
-#include "TitleVersionHook.hpp"
+#include "TitleVersion.hpp"
 #include "src/ModInfo.hpp"
 #include "src/Log/Log.hpp"
 #include "src/GameState.hpp"
@@ -13,7 +13,7 @@
 
 using namespace RC::Unreal;
 
-namespace TitleVersionHook
+namespace TitleVersion
 {
     std::wstring VersionText{};
 
@@ -49,7 +49,7 @@ namespace TitleVersionHook
 
                 s_WidgetClass = obj->GetClassPrivate();
                 s_CachedTextBlock = *textBlockPtr;
-                LOG("[TitleVersionHook] cached TextVersionNumber at 0x{:X}", uintptr_t(s_CachedTextBlock));
+                LOG("[TitleVersion] cached TextVersionNumber at 0x{:X}", uintptr_t(s_CachedTextBlock));
                 break;
             }
 
@@ -60,7 +60,7 @@ namespace TitleVersionHook
             s_SetTextFunc = UObjectGlobals::FindObject<UFunction>(nullptr, STR("/Script/UMG.TextBlock:SetText"));
         if (!s_SetTextFunc)
         {
-            LOG("[TitleVersionHook] failed to find UMG.TextBlock:SetText");
+            LOG("[TitleVersion] failed to find UMG.TextBlock:SetText");
             return;
         }
 
@@ -84,7 +84,7 @@ namespace TitleVersionHook
 
         VersionText = std::wstring(ModInfo::Name) + L" " + std::wstring(ModInfo::Version) +
             L"\nby " + std::wstring(ModInfo::Authors) +
-            L"\n" + StringHelper::ToWide(AP::getAPConnectedStatus());
+            L"\n" + StringHelper::ToWide(APManager::getAPConnectedStatus());
         SetVersionText();
     }
 }

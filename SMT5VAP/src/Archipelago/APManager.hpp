@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace AP {
+namespace APManager {
 	void Shutdown();
 	void APInitialize(const char* IP, const char* PlayerName, const char* Password);
 	const char* getAPConnectedStatus();

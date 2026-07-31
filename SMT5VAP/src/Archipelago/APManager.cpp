@@ -10,7 +10,7 @@
 #include <chrono>
 #include <Windows.h>
 
-namespace AP {
+namespace APManager {
 	constexpr char GameName[]{ "Shin Megami Tensei V: Vengeance" };
 
     static auto LastPollTime = std::chrono::steady_clock::now();
@@ -23,7 +23,14 @@ namespace AP {
     static std::set<int64_t> PendingChecks;
 
     static std::atomic<bool> isAPConnected{ false };
+    static AP_RoomInfo RoomInfo{};
 
+    static std::mutex SlotNameMutex;
+    static std::string SlotName{};
+    static std::string SeedName{};
+
+    static std::string PrevSlotName{};
+    static std::string PrevSeedName{};
 
     void QueueReceivedItem(int64_t itemId) {
         std::lock_guard lock(ItemQueueMutex);
@@ -52,12 +59,18 @@ namespace AP {
 
 	void APInitialize(const char* IP, const char* PlayerName, const char* Password) {
         Shutdown();
+
 		AP_Init(IP, GameName, PlayerName, Password);
 
 		AP_SetItemClearCallback(APState::ClearState);
 		AP_SetItemRecvCallback(OnItemReceived);
 		AP_SetLocationCheckedCallback(APState::Locations::OnLocationChecked);
 		AP_SetDeathLinkSupported(false); //TODO: Setup Death Link
+
+        {
+            std::lock_guard lock(SlotNameMutex);
+            SlotName = PlayerName;
+        }
 
 		AP_Start();
 	}
@@ -116,7 +129,19 @@ namespace AP {
         if (AP_GetConnectionStatus() == AP_ConnectionStatus::Authenticated && getAPConnected() == false) {
             LOG("AP Connected!");
             setAPConnected(true);
-            SendCheckQueue();
+            AP_GetRoomInfo(&RoomInfo);
+
+            std::lock_guard lock(SlotNameMutex);
+            if ((SlotName == PrevSlotName && RoomInfo.seed_name == PrevSeedName) || PrevSeedName == "") {
+                //Same or first Seed
+                SendCheckQueue();
+            }
+            else {
+                //New Seed
+                //Need to reset a bunch of things
+            }
+            PrevSlotName = SlotName;
+            PrevSeedName = RoomInfo.seed_name;
             return;
         }
         if (!(AP_GetConnectionStatus() == AP_ConnectionStatus::Authenticated) && getAPConnected() == true) {
