@@ -1,4 +1,5 @@
 #include "TitleVersionHook.hpp"
+#include "src/ModInfo.hpp"
 #include "src/Log/Log.hpp"
 #include "src/GameState.hpp"
 #include "src/Archipelago/APManager.hpp"
@@ -14,7 +15,6 @@ using namespace RC::Unreal;
 
 namespace TitleVersionHook
 {
-    const std::wstring VERSION{L"SMT5VAP 0.1.0"};
     std::wstring VersionText{};
 
     static auto s_LastPollTime = std::chrono::steady_clock::now();
@@ -82,7 +82,9 @@ namespace TitleVersionHook
         if (now - s_LastPollTime < POLL_INTERVAL) return;
         s_LastPollTime = now;
 
-        VersionText = VERSION + L"\n" + StringHelper::ToWide(AP::getAPConnectedStatus());
+        VersionText = std::wstring(ModInfo::Name) + L" " + std::wstring(ModInfo::Version) +
+            L"\nby " + std::wstring(ModInfo::Authors) +
+            L"\n" + StringHelper::ToWide(AP::getAPConnectedStatus());
         SetVersionText();
     }
 }

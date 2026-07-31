@@ -3,6 +3,7 @@
 #include <DynamicOutput/DynamicOutput.hpp>
 #include <Unreal/World.hpp>
 #include "Archipelago.h"
+#include "src/ModInfo.hpp"
 #include "src/Log/Log.hpp"
 #include "src/Log/SMT5VAPLogDevice.hpp"
 #include "src/GameState.hpp"
@@ -62,10 +63,10 @@ class SMT5VAP : public RC::CppUserModBase
 public:
     SMT5VAP() : CppUserModBase()
     {
-        ModName = STR("SMT5VAP");
-        ModVersion = STR("0.1");
-        ModDescription = STR("An Archipelago integration mod for Shin Megami Tensei V:Vengeance");
-        ModAuthors = STR("Poblin");
+        ModName = ModInfo::Name;
+        ModVersion = ModInfo::Version;
+        ModDescription = ModInfo::Description;
+        ModAuthors = ModInfo::Authors;
 
         register_tab(STR("Archipelago"), RenderAPTab);
 
