@@ -9,6 +9,7 @@
 #include "src/GameState.hpp"
 #include "src/Debug/ShinseiSurvey.hpp"
 #include "src/Debug/StatueSurvey.hpp"
+#include "src/Debug/RegionSurvey.hpp"
 #include "src/Debug/DebugUI.hpp"
 #include "src/Debug/NoEncounterMode.hpp"
 #include "src/Features/Battle/BattleHook.hpp"
@@ -36,6 +37,7 @@
 #include "src/Features/Party/CompendiumTick.hpp"
 #include "src/Features/Party/LevelFunctions.hpp"
 #include "src/Features/Collections/NaviDevilHooks.hpp"
+#include "src/Features/Collections/InspectionPointHooks.hpp"
 #include "src/Features/Party/GardenHauntHooks.hpp"
 #include "src/Features/Party/DemonGiftHooks.hpp"
 #include "src/Features/Progression/MissionHooks.hpp"
@@ -91,6 +93,8 @@ public:
         if (GameState::IsSaveLoaded() && !GameState::IsTransitioning()) {
             CompendiumTick::Poll();
         }
+        InspectionPointHooks::Tick();
+
         if (GameState::MapName().contains(L"Title/LV_Title")) {
             TitleVersion::Tick();
         }
@@ -109,6 +113,9 @@ public:
             MiracleHooks::UnlockForPurchase(60);
             MiracleHooks::GrantMiracle(60);
 
+        }
+        if (GetAsyncKeyState(VK_F6) & 1) {
+            RegionSurvey::RunSurvey();
         }
         if (GetAsyncKeyState(VK_F7) & 1) {
             static int NotificationCounter{ 0 };
@@ -201,9 +208,9 @@ public:
         LevelFunctions::Setup();
         LevelUpTick::Setup();
 
-        //NaviDevilHooks::SetupUniqueSaveID();
-        NaviDevilHooks::SetupAddCheckCounter();
-        NaviDevilHooks::SetupSetGimmickExistFiltered();
+        // Must register BEFORE SetupBlockItems so the FromID post-hook runs first
+        // and block-items can still zero m_ItemInfo on rows we force through.
+        InspectionPointHooks::Setup();
         NaviDevilHooks::SetupBlockItems();
         NaviDevilHooks::SetBlockItems(true);
         NaviDevilHooks::SetReplaceMacca(1);
@@ -234,6 +241,8 @@ public:
         DeathFunctions::Setup();
 
         NoEncounterMode::Setup();
+
+        RegionSurvey::Setup();
 
         EssenceShopHooks::Setup();
 
@@ -315,7 +324,7 @@ public:
             }
         });
 
-        NaviDevilHooks::OnNaviGimmickCollected([](std::int32_t saveId) {
+        InspectionPointHooks::OnGimmickPickedUp([](std::int32_t mapId, std::int32_t id) {
             ;
         });
 

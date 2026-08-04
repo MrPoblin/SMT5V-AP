@@ -1,8 +1,10 @@
 #include "DebugUI.hpp"
 #include "src/Log/Log.hpp"
 #include "src/Debug/NoEncounterMode.hpp"
+#include "src/Debug/RegionSurvey.hpp"
 #include "src/Features/Progression/EventFlags.hpp"
 #include "src/Features/Progression/MissionRewardHook.hpp"
+#include "src/Features/Collections/InspectionPointHooks.hpp"
 #include "src/Archipelago/APState.hpp"
 #include "src/Helper/StringHelper.hpp"
 #include <format>
@@ -13,6 +15,8 @@ static char s_inputFlagName[256]{};
 static int s_inputFlagId{0};
 static int s_inputMapEventId{0};
 static bool s_noEncounter{false};
+static bool s_alwaysShow{false};
+static bool s_onlyOnce{false};
 
 void RenderDebugTab(CppUserModBase* instance)
 {
@@ -179,6 +183,38 @@ void RenderDebugTab(CppUserModBase* instance)
         if (APState::SkillCategories::IsCategoryBlocked(i)) blockedCount++;
     }
     ImGui::Text("Blocked categories: %d / %d", blockedCount, APState::SkillCategories::CATEGORY_COUNT);
+
+    // Inspection Points
+    ImGui::Separator();
+    ImGui::Text("Inspection Points");
+    if (ImGui::Checkbox("Always Show All", &s_alwaysShow)) {
+        InspectionPointHooks::SetAlwaysShow(s_alwaysShow);
+        LOG("[Debug] AlwaysShow={}", s_alwaysShow);
+    }
+    ImGui::SameLine();
+    if (ImGui::Checkbox("Only Once", &s_onlyOnce)) {
+        InspectionPointHooks::SetOnlyOnce(s_onlyOnce);
+        LOG("[Debug] OnlyOnce={}", s_onlyOnce);
+    }
+    ImGui::Text("Triggered: %zu (current map %zu), MapId: %d",
+        InspectionPointHooks::TriggeredCount(),
+        InspectionPointHooks::TriggeredCount(InspectionPointHooks::CurrentMapId()),
+        InspectionPointHooks::CurrentMapId());
+    if (ImGui::Button("Clear Triggered")) {
+        InspectionPointHooks::ClearTriggered();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Refresh Spots")) {
+        InspectionPointHooks::RefreshSpotVisibility();
+        LOG("[Debug] Refresh Spots");
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Region Survey");
+    if (ImGui::Button("Dump Map Regions")) {
+        RegionSurvey::RunSurvey();
+        LOG("[Debug] Region survey run");
+    }
 
     ImGui::EndChild();
 
