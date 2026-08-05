@@ -6,6 +6,7 @@
 #include "src/Features/Progression/MissionRewardHook.hpp"
 #include "src/Features/Collections/InspectionPointHooks.hpp"
 #include "src/Archipelago/APState.hpp"
+#include "src/Features/Party/LevelUpHook.hpp"
 #include "src/Helper/StringHelper.hpp"
 #include <format>
 
@@ -214,6 +215,17 @@ void RenderDebugTab(CppUserModBase* instance)
     if (ImGui::Button("Dump Map Regions")) {
         RegionSurvey::RunSurvey();
         LOG("[Debug] Region survey run");
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Level Up (LevelUpTick)");
+    ImGui::Text("Current cached level: %d", LevelUpTick::GetCachedLevel());
+    int lastOld = LevelUpTick::LastLevelUpOld();
+    int lastNew = LevelUpTick::LastLevelUpNew();
+    if (lastOld > 0 && lastNew > 0) {
+        ImGui::Text("Last level up: %d -> %d (gained %d)", lastOld, lastNew, lastNew - lastOld);
+    } else {
+        ImGui::Text("Last level up: none yet");
     }
 
     ImGui::EndChild();
