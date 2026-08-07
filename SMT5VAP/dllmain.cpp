@@ -242,8 +242,6 @@ public:
 
         NoEncounterMode::Setup();
 
-        RegionSurvey::Setup();
-
         EssenceShopHooks::Setup();
 
         MiracleHooks::Setup();

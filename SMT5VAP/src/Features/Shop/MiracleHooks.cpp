@@ -228,10 +228,14 @@ namespace MiracleHooks {
             }
         }
 
-        // Hook 3: native IsLearningGodParameterSkill implementation
-        // Signature: 48 89 5C 24 ? 57 48 83 EC 40 48 63 F9 E8 ? ? ? ? 48 89 C3 ...
+        // Hook 3: native IsLearningGodParameterSkill implementation at sub_1473649E0
+        // NOTE: the short prefix "48 89 5C 24 ? 57 48 83 EC 40 48 63 F9" also matches
+        // sub_140AB4860 (GetBattleResultPlayerDevilIndex) and sibling skill-state
+        // getters; extended signature includes the E8 call + mov rbx,rax prologue and
+        // the "8D 50 12" (string-len 18) immediate that uniquely identifies 0x1473649E0.
+        // Signature: 48 89 5C 24 ? 57 48 83 EC 40 48 63 F9 E8 ? ? ? ? 48 89 C3 48 8D 4C 24 30 31 C0 48 89 44 24 30 48 89 44 24 38 8D 50 12
         {
-            uint64_t target = SignatureScanner::FindPattern("48 89 5C 24 ? 57 48 83 EC 40 48 63 F9");
+            uint64_t target = SignatureScanner::FindPattern("48 89 5C 24 ? 57 48 83 EC 40 48 63 F9 E8 ? ? ? ? 48 89 C3 48 8D 4C 24 30 31 C0 48 89 44 24 30 48 89 44 24 38 8D 50 12");
             if (!target) {
                 WARN(STR("[MIRACLE] IsLearning signature NOT FOUND"));
                 return;
