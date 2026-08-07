@@ -7,6 +7,7 @@
 #include "src/Log/Log.hpp"
 #include "src/Log/SMT5VAPLogDevice.hpp"
 #include "src/GameState.hpp"
+#include "src/Helper/Deferred.hpp"
 #include "src/Debug/ShinseiSurvey.hpp"
 #include "src/Debug/StatueSurvey.hpp"
 #include "src/Debug/RegionSurvey.hpp"
@@ -89,6 +90,7 @@ public:
         APManager::CheckAPConnection();
         ItemWindow::Update();
         InfoWindow::Update();
+        Deferred::Tick();
 
         if (GameState::IsSaveLoaded() && !GameState::IsTransitioning()) {
             CompendiumTick::Poll();
@@ -255,14 +257,12 @@ public:
                 LevelUpTick::Reset();
                 static bool onceAfterSaveInitialized{ false };
                 if (!onceAfterSaveInitialized) {
-                    ItemLimits::Raise(255);
-                    MissionScoutManager::Rescan();
-                    FusionGating::Setup();
-                    SkillBlocker::Setup();
-
-                    SkillBlocker::BuildCache();
-
                     onceAfterSaveInitialized = true;
+                    Deferred::Enqueue([] { ItemLimits::Raise(255); });
+                    Deferred::Enqueue([] { MissionScoutManager::Rescan(); });
+                    Deferred::Enqueue([] { FusionGating::Setup(); });
+                    Deferred::Enqueue([] { SkillBlocker::Setup(); });
+                    Deferred::Enqueue([] { SkillBlocker::BuildCache(); });
                 }
             }
             });
