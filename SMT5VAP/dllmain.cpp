@@ -55,6 +55,7 @@
 #include "src/Archipelago/APUI.hpp"
 #include "src/Archipelago/APManager.hpp"
 #include "src/Archipelago/APState.hpp"
+#include "src/Archipelago/ItemSync.hpp"
 #include <UE4SSProgram.hpp>
 #include <Windows.h>
 
@@ -91,6 +92,8 @@ public:
         ItemWindow::Update();
         InfoWindow::Update();
         Deferred::Tick();
+        SaveHooks::Tick();
+        ItemSync::Tick();
 
         if (GameState::IsSaveLoaded() && !GameState::IsTransitioning()) {
             CompendiumTick::Poll();
@@ -144,6 +147,7 @@ public:
         DEBUG("Mod initializing{}");
 
         // Debug
+        EssenceShopHooks::SetBlockEssences(false);
         APState::Essences::AddEssence(544);
         APState::Essences::AddEssence(528);
         ItemBlocker::BlockItemId(661);
@@ -250,6 +254,14 @@ public:
         MiracleHooks::SetBlockUnlocks(true);
 
         FusionUnlock::Setup();
+
+        // AP item confirm / regrant system
+        ItemSync::Setup();
+        ItemSync::SetGrantHandler([](int64_t itemId, uint32_t count) {
+            LOG("[ItemSync] GRANT item {} x{}", itemId, count);
+            // TODO: implement actual per-item granting (incl. custom items).
+            //       Runs on the game thread only.
+        });
 
         // Callbacks
         GameState::OnSaveLoaded([](bool isLoaded) {

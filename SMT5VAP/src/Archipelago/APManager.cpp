@@ -1,12 +1,14 @@
 #include "src/Log/Log.hpp"
 #include "Archipelago.h" 
+#include "APManager.hpp"
 #include "APState.hpp"
+#include "ItemSync.hpp"
 #include <mutex>
-#include <queue>
 #include <cstdint>
 #include <atomic>
 #include <set>
-#include <unordered_set>
+#include <vector>
+#include <functional>
 #include <chrono>
 #include <Windows.h>
 
@@ -15,9 +17,6 @@ namespace APManager {
 
     static auto LastPollTime = std::chrono::steady_clock::now();
     static constexpr auto POLL_INTERVAL = std::chrono::milliseconds(500);
-
-    static std::mutex ItemQueueMutex;
-    static std::queue<int64_t> ItemQueue;
 
     static std::mutex PendingCheckMutex;
     static std::set<int64_t> PendingChecks;
@@ -32,24 +31,33 @@ namespace APManager {
     static std::string PrevSlotName{};
     static std::string PrevSeedName{};
 
-    void QueueReceivedItem(int64_t itemId) {
-        std::lock_guard lock(ItemQueueMutex);
-        ItemQueue.push(itemId);
+    static std::mutex ConnectionCallbackMutex;
+    static std::vector<ConnectionCallback> ConnectedCallbacks;
+    static std::vector<ConnectionCallback> DisconnectedCallbacks;
+    static std::vector<ConnectionCallback> NewSeedCallbacks;
+
+    static void FireConnectionCallbacks(const std::vector<ConnectionCallback>& callbacks) {
+        for (auto& cb : callbacks) cb();
     }
 
-    bool DequeueReceivedItem(int64_t& out) {
-        std::lock_guard lock(ItemQueueMutex);
-        if (ItemQueue.empty()) return false;
-        out = ItemQueue.front();
-        ItemQueue.pop();
-        return true;
+    void OnConnected(ConnectionCallback cb) {
+        std::lock_guard lock(ConnectionCallbackMutex);
+        ConnectedCallbacks.push_back(std::move(cb));
+    }
+
+    void OnDisconnected(ConnectionCallback cb) {
+        std::lock_guard lock(ConnectionCallbackMutex);
+        DisconnectedCallbacks.push_back(std::move(cb));
+    }
+
+    void OnNewSeed(ConnectionCallback cb) {
+        std::lock_guard lock(ConnectionCallbackMutex);
+        NewSeedCallbacks.push_back(std::move(cb));
     }
 
     // APCpp thread
 	void OnItemReceived(int64_t itemId, bool notify){
-		if (!notify) return;
-		QueueReceivedItem(itemId);
-		LOG("Received and queued item: {}", itemId);
+		ItemSync::OnItemReceived(itemId, notify);
 	}
 
     void Shutdown() {
@@ -125,28 +133,44 @@ namespace APManager {
         auto now = std::chrono::steady_clock::now();
         if (now - LastPollTime < POLL_INTERVAL) return;
         LastPollTime = now;
+
         //If JUST connected
         if (AP_GetConnectionStatus() == AP_ConnectionStatus::Authenticated && getAPConnected() == false) {
             LOG("AP Connected!");
             setAPConnected(true);
             AP_GetRoomInfo(&RoomInfo);
 
-            std::lock_guard lock(SlotNameMutex);
-            if ((SlotName == PrevSlotName && RoomInfo.seed_name == PrevSeedName) || PrevSeedName == "") {
-                //Same or first Seed
-                SendCheckQueue();
+            bool isNewSeed = false;
+            {
+                std::lock_guard lock(SlotNameMutex);
+                if ((SlotName == PrevSlotName && RoomInfo.seed_name == PrevSeedName) || PrevSeedName == "") {
+                    //Same or first Seed
+                    SendCheckQueue();
+                }
+                else {
+                    //New Seed
+                    //Need to reset a bunch of things
+                    isNewSeed = true;
+                }
+                PrevSlotName = SlotName;
+                PrevSeedName = RoomInfo.seed_name;
             }
-            else {
-                //New Seed
-                //Need to reset a bunch of things
+
+            {
+                std::lock_guard lock(ConnectionCallbackMutex);
+                FireConnectionCallbacks(ConnectedCallbacks);
+                if (isNewSeed) FireConnectionCallbacks(NewSeedCallbacks);
             }
-            PrevSlotName = SlotName;
-            PrevSeedName = RoomInfo.seed_name;
             return;
         }
         if (!(AP_GetConnectionStatus() == AP_ConnectionStatus::Authenticated) && getAPConnected() == true) {
             LOG("AP Disconnected!");
             setAPConnected(false);
+
+            {
+                std::lock_guard lock(ConnectionCallbackMutex);
+                FireConnectionCallbacks(DisconnectedCallbacks);
+            }
             return;
         }
     }

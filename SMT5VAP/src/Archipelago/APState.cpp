@@ -1,4 +1,5 @@
 #include "src/Archipelago/APState.hpp"
+#include "src/Archipelago/ItemSync.hpp"
 #include "src/Log/Log.hpp"
 #include <mutex>
 #include <unordered_set>
@@ -12,6 +13,10 @@ namespace APState {
         Miracles::Clear();
         FusionRaces::Clear();
         SkillCategories::Clear();
+
+        // Fired on the APCpp websocket thread on every Connected, BEFORE the
+        // refire stream. Race-safe resync-window start.
+        ItemSync::OnResyncStart();
     }
 
     namespace Locations {

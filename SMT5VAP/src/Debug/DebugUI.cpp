@@ -6,6 +6,9 @@
 #include "src/Features/Progression/MissionRewardHook.hpp"
 #include "src/Features/Collections/InspectionPointHooks.hpp"
 #include "src/Archipelago/APState.hpp"
+#include "src/Archipelago/ItemSync.hpp"
+#include "src/Features/Save/SaveHooks.hpp"
+#include "src/GameState.hpp"
 #include "src/Features/Party/LevelUpHook.hpp"
 #include "src/Helper/StringHelper.hpp"
 #include <format>
@@ -226,6 +229,43 @@ void RenderDebugTab(CppUserModBase* instance)
         ImGui::Text("Last level up: %d -> %d (gained %d)", lastOld, lastNew, lastNew - lastOld);
     } else {
         ImGui::Text("Last level up: none yet");
+    }
+
+    ImGui::Separator();
+    ImGui::Text("ItemSync (save/regrant)");
+    ImGui::Text("InResync: %s | Save loaded: %s | Save pending: %s | Queued grants: %zu",
+        ItemSync::IsInResync() ? "yes" : "no",
+        ItemSync::IsSaveLoaded() ? "yes" : "no",
+        SaveHooks::IsSavePending() ? "yes" : "no",
+        ItemSync::QueuedGrantCount());
+    {
+        static int s_confirmItemId = 0;
+        static int s_confirmCount = 1;
+        ImGui::InputInt("Item ID##confirm", &s_confirmItemId);
+        ImGui::InputInt("Count##confirm", &s_confirmCount);
+        if (ImGui::Button("Simulate receive")) ItemSync::DebugSimulateReceive(s_confirmItemId, s_confirmCount);
+        ImGui::SameLine();
+        if (ImGui::Button("Simulate refire")) ItemSync::DebugSimulateRefire(s_confirmItemId, s_confirmCount);
+        ImGui::SameLine();
+        if (ImGui::Button("Simulate death")) ItemSync::DebugSimulateDeath();
+    }
+    if (ImGui::Button("Start resync")) ItemSync::DebugStartResync();
+    ImGui::SameLine();
+    if (ImGui::Button("End resync")) ItemSync::DebugEndResync();
+    ImGui::SameLine();
+    if (ImGui::Button("Force confirm")) ItemSync::DebugForceConfirm();
+
+    {
+        ImGui::Text("PendingGrant:");
+        auto pending = ItemSync::GetPendingList();
+        for (auto& [id, count] : pending) {
+            ImGui::Text("  %lld x %u", static_cast<long long>(id), count);
+        }
+        ImGui::Text("GrantedInWorld:");
+        auto inWorld = ItemSync::GetInWorldList();
+        for (auto& [id, count] : inWorld) {
+            ImGui::Text("  %lld x %u", static_cast<long long>(id), count);
+        }
     }
 
     ImGui::EndChild();
