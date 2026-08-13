@@ -151,10 +151,10 @@ public:
         APState::Essences::AddEssence(544);
         APState::Essences::AddEssence(528);
         ItemBlocker::BlockItemId(661);
-        FusionGating::SetEnabled(false);
+        FusionGating::SetEnabled(true);
         APState::FusionRaces::SetRaceUnlocked(5, true);
         APState::FusionRaces::SetRaceUnlocked(3, true);
-        FusionGating::SetEssenceGatingEnabled(false);
+        FusionGating::SetEssenceGatingEnabled(true);
         APState::SkillCategories::SetCategoryBlocked(0, true);
 
         // Hooks

@@ -31,6 +31,10 @@ static const char* s_RaceNames[50] = {
     "Nahobino", "Proto-fiend", "Matter", "Panagia", "Enigma", "UMA", "Qadistu", "Human", "Primal", "Void"
 };
 
+// Proto-fiend race id (index into s_RaceNames). Essence fusion keeps Proto-fiend
+// essences even when the race is gated, so they are NOT compacted/removed there.
+static constexpr int32 kProtoFiendRaceId = 41;
+
 std::string RaceName(int32_t race) {
     if (race < 0 || race >= 50) return "Unknown";
     return s_RaceNames[race];
@@ -345,7 +349,8 @@ static char __fastcall HkRevSecPop7760(__int64 a1, unsigned int a2) {
 //              a1+1136.
 //   capOff   : offset (relative to arrOff) of the capacity dword (+12 standard).
 static void CompactGatedEntriesEx(__int64 a1, int arrOff, int countOff, int capOff,
-                                   int stride, int devidOff, bool dropZero = false) {
+                                   int stride, int devidOff, bool dropZero = false,
+                                   bool skipProtoFiend = false) {
     void* base = *reinterpret_cast<void**>(a1 + arrOff);
     int count = *reinterpret_cast<int*>(a1 + arrOff + countOff);
     int cap = *reinterpret_cast<int*>(a1 + arrOff + capOff);
@@ -356,7 +361,10 @@ static void CompactGatedEntriesEx(__int64 a1, int arrOff, int countOff, int capO
         uintptr_t e = reinterpret_cast<uintptr_t>(base) + stride * (uintptr_t)i;
         uint16_t did = *reinterpret_cast<uint16_t*>(e + devidOff);
         int32 race = CachedRace((int32)did);
-        bool gated = (did > 0 && race >= 0 && APState::FusionRaces::IsRaceGated(race));
+        // Essence fusion (skipProtoFiend): keep Proto-fiend essences even when the
+        // race is gated -- they must stay fused/removable.
+        bool gated = (did > 0 && race >= 0 && APState::FusionRaces::IsRaceGated(race) &&
+                      !(skipProtoFiend && race == kProtoFiendRaceId));
         bool zero = (did == 0);
         if (gated || (dropZero && zero)) {
             continue;
@@ -389,6 +397,7 @@ struct DiagHook {
     int DevidOff2 = 4;
     std::wstring Tag = L"";
     bool DoGray = false;
+    bool SkipProtoFiend = false; // essence fusion only: keep Proto-fiend entries even when gated
     bool DropZero = false;     // also drop entries whose result devil id is 0 (N/A / impossible fusion)
     bool ForceValid = false;   // for surviving ungated results, force the validity byte (+20) to 1 so the
                               // game's own "non-fusable" flag (sub_140BFD620) doesn't render them as N/A
@@ -412,9 +421,9 @@ static inline int ArrCountEx(__int64 a1, int off, int countOff, int capOff) {
 static inline void DoGrayCompact(DiagHook& h, __int64 a1) {
     if (!h.DoGray || !IsEnabled()) return;
     int pre1 = ArrCountEx(a1, h.ArrOff, h.CountOff, h.CapOff);
-    CompactGatedEntriesEx(a1, h.ArrOff, h.CountOff, h.CapOff, h.Stride, h.DevidOff, h.DropZero);
+    CompactGatedEntriesEx(a1, h.ArrOff, h.CountOff, h.CapOff, h.Stride, h.DevidOff, h.DropZero, h.SkipProtoFiend);
     if (h.ArrOff2 != 0)
-        CompactGatedEntriesEx(a1, h.ArrOff2, h.CountOff2, h.CapOff2, h.Stride2, h.DevidOff2, h.DropZero);
+        CompactGatedEntriesEx(a1, h.ArrOff2, h.CountOff2, h.CapOff2, h.Stride2, h.DevidOff2, h.DropZero, h.SkipProtoFiend);
     int post1 = ArrCountEx(a1, h.ArrOff, h.CountOff, h.CapOff);
     if (pre1 > post1)
         LOG("[FusionGating] {} removed {} gated result(s) ({}->{})", h.Tag, pre1 - post1, pre1, post1);
@@ -469,6 +478,7 @@ static void TryInstallBuildHook() {
         int arrOff2; int countOff2; int capOff2; int stride2; int devidOff2;
         bool dropZero = false;
         bool forceValid = false;
+        bool skipProtoFiend = false;
     };
     Spec specs[] = {
         { "40 55 53 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 ? ? ? ? 48 81 EC D8 01 00 00 4C 8D A9",
@@ -481,8 +491,10 @@ static void TryInstallBuildHook() {
           1200, 8, 12, "Disp(7500)",    true,  true, 21, 48, 4, 0, 8, 12, 48, 4, false, true },
         { "40 55 57 41 54 41 56 48 83 EC 28 48 8D B9",
           1024, 8, 12, "RevPrim(7570)",  false, true,  21,  4, 0, 0, 8, 12, 4, 0 },
+        // Essence(8060): skipProtoFiend keeps Proto-fiend essences fused/removable
+        // even when the race is gated (story-required); every other race stays gated.
         { "48 89 5C 24 ? 55 56 57 41 56 41 57 48 8D 6C 24 ? 48 81 EC 70 01 00 00 0F B7 B1",
-          1216, 8, 12, "Essence(8060)", false, true,  21, 48, 4, 0, 8, 12, 48, 4 },
+          1216, 8, 12, "Essence(8060)", false, true,  21, 48, 4, 0, 8, 12, 48, 4, false, false, true },
     };
     s_Diag.clear();
     for (auto& s : specs) {
@@ -497,6 +509,7 @@ static void TryInstallBuildHook() {
         dh.Stride2 = s.stride2; dh.DevidOff2 = s.devidOff2;
         dh.DropZero = s.dropZero;
         dh.ForceValid = s.forceValid;
+        dh.SkipProtoFiend = s.skipProtoFiend;
         uint64_t orig = 0;
         int idx = (int)s_Diag.size();
         s_Diag.push_back(std::move(dh));
