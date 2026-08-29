@@ -141,9 +141,12 @@ public:
             ItemCounter++;
         }
         if (GetAsyncKeyState(VK_F1) & 1) {
-            DEBUG("[F1] SummonBattle test: encID=663");
+            // F1: bare summon (no chained kill). Use this to verify
+            // the spawn path alone. To chain a kill, use the DebugUI
+            // "Summon + force game over" button instead, which calls
+            // the same two APIs but from a controlled context.
+            DEBUG("[F1] SummonBattle test: encID=0, no enemy override");
             SummonBattle::Summon(663, {});
-            DeathFunctions::KillLocalPlayer();
         }
     }
 
