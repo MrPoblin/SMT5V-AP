@@ -102,8 +102,11 @@ public:
         InspectionPointHooks::Tick();
 
         if (GameState::MapName().contains(L"Title/LV_Title")) {
-            TitleVersion::Tick();
+            if (!GameState::IsSaveLoaded()) {
+                TitleVersion::Tick();
+            }
         }
+        
         // Debug tools
         if (GetAsyncKeyState(VK_F4) & 1 && !GameState::IsTransitioning()) {
             ItemGet::GiveItem(110, 1);
@@ -141,12 +144,8 @@ public:
             ItemCounter++;
         }
         if (GetAsyncKeyState(VK_F1) & 1) {
-            // F1: bare summon (no chained kill). Use this to verify
-            // the spawn path alone. To chain a kill, use the DebugUI
-            // "Summon + force game over" button instead, which calls
-            // the same two APIs but from a controlled context.
-            DEBUG("[F1] SummonBattle test: encID=0, no enemy override");
-            SummonBattle::Summon(663, {});
+            DEBUG("[F1] SummonBattle test: full MapEvent summon");
+            SummonBattle::SummonEvent(7);
         }
     }
 

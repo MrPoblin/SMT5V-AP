@@ -24,7 +24,6 @@ static bool s_noEncounter{false};
 static bool s_alwaysShow{false};
 static bool s_onlyOnce{false};
 static int s_summonEncID{0};
-static int s_summonEnemyID{1};
 
 void RenderDebugTab(CppUserModBase* instance)
 {
@@ -273,33 +272,21 @@ void RenderDebugTab(CppUserModBase* instance)
     }
 
     ImGui::Separator();
-    ImGui::Text("Summon Battle (spawn only — does not touch the resulting fight)");
-    ImGui::InputInt("Encount ID##summon", &s_summonEncID);
-    ImGui::InputInt("Enemy Devil ID (0 = use table row)##summon", &s_summonEnemyID);
+    ImGui::Text("Summon Battle (full MapEvent pipeline — spawn only, does not touch the resulting fight)");
+    ImGui::InputInt("MapEvent ID (0 = auto-discover)##summon", &s_summonEncID);
     if (ImGui::Button("Summon")) {
-        if (s_summonEnemyID > 0) {
-            std::vector<int32_t> enemies{ s_summonEnemyID };
-            SummonBattle::Summon(s_summonEncID, enemies);
-        } else {
-            // Empty enemy list = use the encount table row's
-            // m_EnemyIDArray verbatim. Pass a dummy single-element
-            // vector of 0 only if you want to force an explicit list;
-            // for "spawn whatever this row says" just call with {}.
-            SummonBattle::Summon(s_summonEncID, {});
-        }
+        // Full-fidelity summon through the natural MapEvent path. An ID of 0
+        // makes the module auto-discover a usable MapEvent row for the
+        // current map; a non-zero ID is used as the explicit row.
+        SummonBattle::SummonEvent(s_summonEncID);
     }
     ImGui::SameLine();
     if (ImGui::Button("Summon + force game over")) {
-        if (s_summonEnemyID > 0) {
-            std::vector<int32_t> enemies{ s_summonEnemyID };
-            SummonBattle::Summon(s_summonEncID, enemies);
-        } else {
-            SummonBattle::Summon(s_summonEncID, {});
-        }
+        SummonBattle::SummonEvent(s_summonEncID);
         DeathFunctions::KillLocalPlayer();
     }
     if (SummonBattle::IsActive()) {
-        ImGui::TextColored(ImVec4(0.5f, 1, 0.5f, 1), "Last summon dispatched (engine owns the encounter now)");
+        ImGui::TextColored(ImVec4(0.5f, 1, 0.5f, 1), "Last summon dispatched (engine owns the battle now)");
     }
 
     ImGui::EndChild();
