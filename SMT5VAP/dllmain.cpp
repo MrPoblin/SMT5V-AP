@@ -154,6 +154,9 @@ public:
         Output::set_default_devices<Output::SMT5VAPLogDevice>();
         DEBUG("Mod initializing{}");
 
+        // Reconnect automatically using saved connection info if present.
+        APManager::AutoConnectIfConfigured();
+
         // Debug
         EssenceShopHooks::SetBlockEssences(false);
         APState::Essences::AddEssence(544);

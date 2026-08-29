@@ -3,6 +3,8 @@
 #include "APManager.hpp"
 #include "APState.hpp"
 #include "ItemSync.hpp"
+#include "src/Helper/StringHelper.hpp"
+#include <json/json.h>
 #include <mutex>
 #include <cstdint>
 #include <atomic>
@@ -10,6 +12,7 @@
 #include <vector>
 #include <functional>
 #include <chrono>
+#include <fstream>
 #include <Windows.h>
 
 namespace APManager {
@@ -81,6 +84,52 @@ namespace APManager {
         }
 
 		AP_Start();
+	}
+
+	constexpr wchar_t CONFIG_FILE[]{ L"apconfig.json" };
+
+	bool LoadConfig(APConfig& cfg) {
+		std::ifstream in(CONFIG_FILE);
+		if (!in) return false;
+
+		Json::Value root;
+		Json::CharReaderBuilder builder;
+		std::string errs;
+		if (!Json::parseFromStream(builder, in, &root, &errs)) {
+			WARN(L"Failed to parse {}: {}", CONFIG_FILE, StringHelper::StringToWide(errs));
+			return false;
+		}
+
+		cfg.IP = root.get("url", "").asString();
+		cfg.SlotName = root.get("slot_name", "").asString();
+		cfg.Password = root.get("password", "").asString();
+		return true;
+	}
+
+	void SaveConfig(const APConfig& cfg) {
+		Json::Value root;
+		root["url"] = cfg.IP;
+		root["slot_name"] = cfg.SlotName;
+		root["password"] = cfg.Password;
+
+		std::ofstream out(CONFIG_FILE);
+		if (out) {
+			out << root.toStyledString();
+			LOG(L"Saved connection config to {}", CONFIG_FILE);
+		}
+		else {
+			WARN(L"Failed to open {} for writing", CONFIG_FILE);
+		}
+	}
+
+	bool AutoConnectIfConfigured() {
+		APConfig cfg;
+		if (!LoadConfig(cfg)) return false;
+		if (cfg.IP.empty() || cfg.SlotName.empty()) return false;
+
+		LOG(L"Auto-connecting to {} as {} from {}", StringHelper::StringToWide(cfg.IP), StringHelper::StringToWide(cfg.SlotName), CONFIG_FILE);
+		APInitialize(cfg.IP.c_str(), cfg.SlotName.c_str(), cfg.Password.c_str());
+		return true;
 	}
 
     bool getAPConnected() {
