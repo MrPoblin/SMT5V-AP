@@ -10,6 +10,8 @@
 #include "src/Features/Save/SaveHooks.hpp"
 #include "src/GameState.hpp"
 #include "src/Features/Party/LevelUpHook.hpp"
+#include "src/Features/Battle/DeathFunctions.hpp"
+#include "src/Features/Battle/SummonBattle.hpp"
 #include "src/Helper/StringHelper.hpp"
 #include <format>
 
@@ -21,6 +23,8 @@ static int s_inputMapEventId{0};
 static bool s_noEncounter{false};
 static bool s_alwaysShow{false};
 static bool s_onlyOnce{false};
+static int s_summonEncID{0};
+static int s_summonEnemyID{1};
 
 void RenderDebugTab(CppUserModBase* instance)
 {
@@ -266,6 +270,36 @@ void RenderDebugTab(CppUserModBase* instance)
         for (auto& [id, count] : inWorld) {
             ImGui::Text("  %lld x %u", static_cast<long long>(id), count);
         }
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Summon Battle (spawn only — does not touch the resulting fight)");
+    ImGui::InputInt("Encount ID##summon", &s_summonEncID);
+    ImGui::InputInt("Enemy Devil ID (0 = use table row)##summon", &s_summonEnemyID);
+    if (ImGui::Button("Summon")) {
+        if (s_summonEnemyID > 0) {
+            std::vector<int32_t> enemies{ s_summonEnemyID };
+            SummonBattle::Summon(s_summonEncID, enemies);
+        } else {
+            // Empty enemy list = use the encount table row's
+            // m_EnemyIDArray verbatim. Pass a dummy single-element
+            // vector of 0 only if you want to force an explicit list;
+            // for "spawn whatever this row says" just call with {}.
+            SummonBattle::Summon(s_summonEncID, {});
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Summon + force game over")) {
+        if (s_summonEnemyID > 0) {
+            std::vector<int32_t> enemies{ s_summonEnemyID };
+            SummonBattle::Summon(s_summonEncID, enemies);
+        } else {
+            SummonBattle::Summon(s_summonEncID, {});
+        }
+        DeathFunctions::KillLocalPlayer();
+    }
+    if (SummonBattle::IsActive()) {
+        ImGui::TextColored(ImVec4(0.5f, 1, 0.5f, 1), "Last summon dispatched (engine owns the encounter now)");
     }
 
     ImGui::EndChild();

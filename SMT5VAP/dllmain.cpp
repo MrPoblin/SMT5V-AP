@@ -15,6 +15,7 @@
 #include "src/Debug/NoEncounterMode.hpp"
 #include "src/Features/Battle/BattleHook.hpp"
 #include "src/Features/Battle/DeathFunctions.hpp"
+#include "src/Features/Battle/SummonBattle.hpp"
 #include "src/Features/Skills/SkillBlocker.hpp"
 #include "src/Features/Collections/ChestHooks.hpp"
 #include "src/Features/Collections/VendingHooks.hpp"
@@ -139,6 +140,11 @@ public:
             ItemWindow::ShowItemPopupCustom(1, L"Something obtained");
             ItemCounter++;
         }
+        if (GetAsyncKeyState(VK_F1) & 1) {
+            DEBUG("[F1] SummonBattle test: encID=663");
+            SummonBattle::Summon(663, {});
+            DeathFunctions::KillLocalPlayer();
+        }
     }
 
     auto on_unreal_init() -> void override
@@ -245,6 +251,7 @@ public:
         InfoWindow::Setup();
 
         DeathFunctions::Setup();
+        SummonBattle::Setup();
 
         NoEncounterMode::Setup();
 
