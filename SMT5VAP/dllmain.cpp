@@ -257,8 +257,8 @@ public:
 
         // AP item confirm / regrant system
         ItemSync::Setup();
-        ItemSync::SetGrantHandler([](int64_t itemId, uint32_t count) {
-            LOG("[ItemSync] GRANT item {} x{}", itemId, count);
+        ItemSync::SetGrantHandler([](int64_t itemId, uint32_t count, bool seen) {
+            LOG("[ItemSync] GRANT item {} x{} ({})", itemId, count, seen ? L"seen" : L"new");
             // TODO: implement actual per-item granting (incl. custom items).
             //       Runs on the game thread only.
         });

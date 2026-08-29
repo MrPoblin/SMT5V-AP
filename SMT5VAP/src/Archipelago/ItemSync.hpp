@@ -24,8 +24,11 @@
 namespace ItemSync {
 
 // Called on the game thread for every item grant. Implement per-item granting
-// (incl. any custom AP items) here.
-using GrantFn = std::function<void(int64_t itemId, uint32_t count)>;
+// (incl. any custom AP items) here. `seen` is true when this grant is a
+// re-grant of items the player already received this session but that were lost
+// (e.g. a death save-load): handlers can use it to suppress the repeat
+// notification popup.
+using GrantFn = std::function<void(int64_t itemId, uint32_t count, bool seen)>;
 
 void Setup();
 void SetGrantHandler(GrantFn fn);

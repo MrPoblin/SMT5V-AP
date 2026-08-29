@@ -29,9 +29,18 @@ namespace {
     // reconcile avoid re-granting copies that were never lost to a death.
     std::map<int64_t, uint32_t> s_GrantedInWorld;
 
+    // Item ids whose grants have been physically delivered to the handler at
+    // least once during the current unconfirmed window. Unlike s_GrantedInWorld
+    // this survives the return-to-title (world teardown), which is exactly how a
+    // death save-load regrant later knows the player already saw the item
+    // (seen=true) and can suppress the repeat notification. Cleared alongside
+    // the other state on confirm + seed change.
+    std::map<int64_t, bool> s_SeenGranted;
+
     struct GrantRequest {
         int64_t itemId;
         uint32_t count;
+        bool seen;
     };
     // Grants queued for the game thread. Drained in Tick().
     std::vector<GrantRequest> s_GrantQueue;
@@ -78,6 +87,7 @@ void OnSeedChanged() {
     std::lock_guard lock(s_Mutex);
     s_PendingGrant.clear();
     s_GrantedInWorld.clear();
+    s_SeenGranted.clear();
     s_GrantQueue.clear();
     if (!s_InResync) {
         s_InResync = true;
@@ -94,7 +104,7 @@ void OnItemReceived(int64_t itemId, bool notify) {
 
     if (GameState::IsSaveLoaded() && !s_InResync) {
         s_GrantedInWorld[itemId]++;
-        s_GrantQueue.push_back({ itemId, 1 });
+        s_GrantQueue.push_back({ itemId, 1, false });
         LOG("[ItemSync] Live grant queued: item {} (pending={}, inworld={})",
             itemId, s_PendingGrant[itemId], s_GrantedInWorld[itemId]);
     } else {
@@ -114,7 +124,9 @@ void EndResyncWindow() {
             auto it = s_GrantedInWorld.find(id);
             uint32_t inWorld = (it != s_GrantedInWorld.end()) ? it->second : 0;
             if (pending > inWorld) {
-                s_GrantQueue.push_back({ id, pending - inWorld });
+                // Resync difference = copies that were never physically granted
+                // in-world -> first-time grants, so seen=false.
+                s_GrantQueue.push_back({ id, pending - inWorld, false });
                 s_GrantedInWorld[id] = pending;
                 granted++;
             }
@@ -134,10 +146,16 @@ void DrainGrantQueue() {
     }
     for (const auto& r : batch) {
         if (s_GrantHandler) {
-            s_GrantHandler(r.itemId, r.count);
+            s_GrantHandler(r.itemId, r.count, r.seen);
         } else {
             WARN("[ItemSync] No grant handler set - dropping item {} x{}", r.itemId, r.count);
         }
+    }
+    // Anything that reached the handler was at least shown once -> mark seen so
+    // a later death save-load regrant knows to suppress the repeat notification.
+    std::lock_guard lock(s_Mutex);
+    for (const auto& r : batch) {
+        s_SeenGranted[r.itemId] = true;
     }
 }
 
@@ -166,7 +184,12 @@ void DoSaveLoadRegrant() {
     s_GrantedInWorld.clear();
     size_t kinds = s_PendingGrant.size();
     for (const auto& [id, count] : s_PendingGrant) {
-        s_GrantQueue.push_back({ id, count });
+        // seen=true when the player already physically received this id this
+        // session (granted before the death): lets the handler suppress the
+        // repeat notification. Ids that were only ever pending (arrived while
+        // no world was loaded / during resync) stay unseen -> first-time notif.
+        bool seen = s_SeenGranted.find(id) != s_SeenGranted.end();
+        s_GrantQueue.push_back({ id, count, seen });
         s_GrantedInWorld[id] = count;
     }
     LOG("[ItemSync] Save-load regrant queued: {} item kinds", kinds);
@@ -182,6 +205,7 @@ void OnSaveCompleted() {
     std::lock_guard lock(s_Mutex);
     s_PendingGrant.clear();
     s_GrantedInWorld.clear();
+    s_SeenGranted.clear();
 }
 
 void Setup() {
