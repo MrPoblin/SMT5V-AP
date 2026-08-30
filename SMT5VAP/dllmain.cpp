@@ -147,7 +147,7 @@ public:
         if (GetAsyncKeyState(VK_F1) & 1) {
             DEBUG("[F1] SummonBattle test: full MapEvent summon");
             SummonBattle::SummonEvent(7);
-            Deferred::DelayedEnqueue([] { DeathFunctions::KillLocalPlayer(); }, 3.0);
+            DeathFunctions::KillLocalPlayer(true);
         }
     }
 

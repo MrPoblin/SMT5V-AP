@@ -1,11 +1,13 @@
 #include "DeathFunctions.hpp"
 #include "src/Log/Log.hpp"
+#include "src/GameState.hpp"
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/UObject.hpp>
 #include <Unreal/UFunctionStructs.hpp>
 #include <Unreal/CoreUObject/UObject/Class.hpp>
 #include <Unreal/Hooks/CallbackIterationData.hpp>
 #include <vector>
+#include <chrono>
 
 using namespace RC;
 using namespace RC::Unreal;
@@ -16,6 +18,10 @@ namespace DeathFunctions {
 // Work is deferred to the engine-tick PRE callback so it never runs mid
 // engine-tick (which would corrupt the battle state machine).
 static bool s_PendingKill{false};
+static bool s_RetryUntilSuccess{false};
+
+static auto s_LastPollTime = std::chrono::steady_clock::now();
+static constexpr auto POLL_INTERVAL = std::chrono::seconds(1);
 
 static UObject* GetActivePartyComponent() {
     std::vector<UObject*> objs;
@@ -36,6 +42,17 @@ static UObject* GetBattleMainActor() {
     return nullptr;
 }
 
+static bool GameOverActuallyStarted() {
+    auto* bm = GetBattleMainActor();
+    if (!bm) return false;
+    // m_Step at 0x260 on ABattleMainWorkBase
+    uint8 step = *reinterpret_cast<uint8*>(reinterpret_cast<uint8*>(bm) + 0x260);
+    if (step == 29) return true; // E_BTL_STEP_GAMEOVER
+    // m_GameOverWidget at 0xE18 on ABattleMain_C
+    void* widget = *reinterpret_cast<void**>(reinterpret_cast<uint8*>(bm) + 0xE18);
+    return widget != nullptr;
+}
+
 static void TriggerGameOverNow() {
     auto* comp = GetActivePartyComponent();
     if (!comp) { LOG("[Death] no active party component"); return; }
@@ -53,8 +70,19 @@ static void TriggerGameOverNow() {
 }
 
 static void OnEngineTickPre(Hook::TCallbackIterationData<void>&, UEngine*, float, bool) {
+    auto now = std::chrono::steady_clock::now();
+    if (now - s_LastPollTime < POLL_INTERVAL) return;
+    s_LastPollTime = now;
+
     if (s_PendingKill) {
-        s_PendingKill = false;
+        if (!s_RetryUntilSuccess) {
+            s_PendingKill = false;
+        }
+        else if (GameOverActuallyStarted() || GameState::MapName().contains(L"Title/LV_Title")) {
+            s_PendingKill = false;
+            s_RetryUntilSuccess = false;
+            return;
+        }
         TriggerGameOverNow();
     }
 }
@@ -66,8 +94,9 @@ void Setup() {
     Hook::RegisterEngineTickPreCallback(OnEngineTickPre, Hook::FCallbackOptions{});
 }
 
-bool KillLocalPlayer() {    
+bool KillLocalPlayer(bool retry) {    
     s_PendingKill = true;
+    s_RetryUntilSuccess = retry;
     LOG("[Death] game-over requested");
     return true;
 }

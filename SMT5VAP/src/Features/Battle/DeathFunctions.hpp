@@ -12,6 +12,6 @@ void Setup();
 // and the incoming death-link kill. The transition is deferred to the
 // engine-tick PRE callback so battle state is mutated at tick start, not mid
 // engine-tick.
-bool KillLocalPlayer();
+bool KillLocalPlayer(bool retry = false);
 
 }
