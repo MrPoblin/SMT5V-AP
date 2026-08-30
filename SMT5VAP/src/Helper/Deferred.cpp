@@ -3,6 +3,8 @@
 #include "src/GameState.hpp"
 #include "src/Log/Log.hpp"
 
+#include <chrono>
+#include <queue>
 #include <vector>
 
 namespace {
@@ -12,7 +14,21 @@ namespace {
     // finish so caches are built against settled state.
     constexpr int STABLE_FRAME_THRESHOLD = 120;
 
+    struct DelayedTask {
+        std::function<void()> task;
+        std::chrono::steady_clock::time_point readyAt;
+
+        // priority_queue is a max-heap by default; invert the comparison so
+        // the earliest readyAt sits at the top.
+        bool operator<(const DelayedTask& other) const {
+            return readyAt > other.readyAt;
+        }
+    };
+
     std::vector<std::function<void()>> g_queue;
+    std::priority_queue<DelayedTask> g_delayedQueue;
+    std::vector<std::function<void()>> g_immediateQueue;
+    std::priority_queue<DelayedTask> g_immediateDelayedQueue;
     int g_stableFrames = 0;
 
     // The save-resume path loads its map WITHOUT going through UEngine::LoadMap,
@@ -39,11 +55,18 @@ namespace {
         }
     }
 
-    bool WorldIsStable() {
+    bool WorldIsSettled() {
         return GameState::IsSaveLoaded()
-            && g_mapChangedSinceEnqueue
             && !GameState::IsTransitioning()
             && !GameState::MapName().empty();
+    }
+
+    bool WorldIsStable() {
+        // The save-resume path loads its map WITHOUT going through
+        // UEngine::LoadMap, so IsTransitioning() never flips during that load.
+        // Requiring a completed map load AFTER the enqueue is what guarantees
+        // the map has finished streaming in.
+        return WorldIsSettled() && g_mapChangedSinceEnqueue;
     }
 
 } // namespace
@@ -51,6 +74,21 @@ namespace {
 namespace Deferred {
 
     void Enqueue(std::function<void()> task) {
+        if (task) {
+            g_immediateQueue.emplace_back(std::move(task));
+        }
+    }
+
+    void DelayedEnqueue(std::function<void()> task, double delaySeconds) {
+        if (task) {
+            auto readyAt = std::chrono::steady_clock::now()
+                + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                    std::chrono::duration<double>(delaySeconds));
+            g_immediateDelayedQueue.push({std::move(task), readyAt});
+        }
+    }
+
+    void EnqueueAfterMapChange(std::function<void()> task) {
         if (task) {
             EnsureMapHookRegistered();
             // Require the next completed map load before running. Cleared on the
@@ -61,7 +99,51 @@ namespace Deferred {
         }
     }
 
+    void DelayedEnqueueAfterMapChange(std::function<void()> task, double delaySeconds) {
+        if (task) {
+            EnsureMapHookRegistered();
+            // Same map-load requirement as EnqueueAfterMapChange: the task only
+            // ever runs on a settled map.
+            g_mapChangedSinceEnqueue = false;
+            auto readyAt = std::chrono::steady_clock::now()
+                + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                    std::chrono::duration<double>(delaySeconds));
+            g_delayedQueue.push({std::move(task), readyAt});
+        }
+    }
+
     void Tick() {
+        // --- Immediate mechanism: no map-change requirement, no frame window.
+        // Run as soon as the world is settled, one task per tick.
+
+        // Promote the oldest delayed task (if any) whose delay has elapsed.
+        if (!g_immediateDelayedQueue.empty()
+            && g_immediateDelayedQueue.top().readyAt <= std::chrono::steady_clock::now()) {
+            auto task = std::move(g_immediateDelayedQueue.top().task);
+            g_immediateDelayedQueue.pop();
+            if (task) {
+                g_immediateQueue.emplace_back(std::move(task));
+            }
+        }
+
+        if (!g_immediateQueue.empty() && WorldIsSettled()) {
+            auto task = std::move(g_immediateQueue.front());
+            g_immediateQueue.erase(g_immediateQueue.begin());
+
+            LOG("[Deferred] Running immediate task ({} remaining)", g_immediateQueue.size());
+            task();
+        }
+
+        // --- Map-change mechanism: requires a new map load + settle window.
+        if (!g_delayedQueue.empty()
+            && g_delayedQueue.top().readyAt <= std::chrono::steady_clock::now()) {
+            auto task = std::move(g_delayedQueue.top().task);
+            g_delayedQueue.pop();
+            if (task) {
+                g_queue.emplace_back(std::move(task));
+            }
+        }
+
         if (g_queue.empty()) {
             return;
         }
@@ -89,6 +171,9 @@ namespace Deferred {
 
     void Clear() {
         g_queue.clear();
+        g_delayedQueue = {};
+        g_immediateQueue.clear();
+        g_immediateDelayedQueue = {};
         g_stableFrames = 0;
     }
 

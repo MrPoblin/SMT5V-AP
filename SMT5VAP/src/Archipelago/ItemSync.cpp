@@ -176,7 +176,7 @@ void Tick() {
 void OnSaveLoaded() {
     // World is being rebuilt from the save. Regrant all pending copies once the
     // world has settled (Deferred waits for a map load + settling delay).
-    Deferred::Enqueue([]() { DoSaveLoadRegrant(); });
+    Deferred::EnqueueAfterMapChange([]() { DoSaveLoadRegrant(); });
 }
 
 void DoSaveLoadRegrant() {

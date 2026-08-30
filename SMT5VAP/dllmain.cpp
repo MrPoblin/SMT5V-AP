@@ -130,6 +130,9 @@ public:
             static int NotificationCounter{ 0 };
             InfoWindow::ShowNotificationF("Notification {}", NotificationCounter);
             NotificationCounter++;
+            static int ItemCounter{ 0 };
+            ItemWindow::ShowItemPopupCustom(1, L"Something obtained");
+            ItemCounter++;
         }
         if (GetAsyncKeyState(VK_F8) & 1) {
             
@@ -139,13 +142,12 @@ public:
             DEBUG("Is in haunt: {}", GardenHauntHooks::IsInGardenLevel());
         }
         if (GetAsyncKeyState(VK_F9) & 1) {
-            static int ItemCounter{ 0 };
-            ItemWindow::ShowItemPopupCustom(1, L"Something obtained");
-            ItemCounter++;
+            ;
         }
         if (GetAsyncKeyState(VK_F1) & 1) {
             DEBUG("[F1] SummonBattle test: full MapEvent summon");
             SummonBattle::SummonEvent(7);
+            Deferred::DelayedEnqueue([] { DeathFunctions::KillLocalPlayer(); }, 3.0);
         }
     }
 
@@ -282,11 +284,11 @@ public:
                 static bool onceAfterSaveInitialized{ false };
                 if (!onceAfterSaveInitialized) {
                     onceAfterSaveInitialized = true;
-                    Deferred::Enqueue([] { ItemLimits::Raise(255); });
-                    Deferred::Enqueue([] { MissionScoutManager::Rescan(); });
-                    Deferred::Enqueue([] { FusionGating::Setup(); });
-                    Deferred::Enqueue([] { SkillBlocker::Setup(); });
-                    Deferred::Enqueue([] { SkillBlocker::BuildCache(); });
+                    Deferred::EnqueueAfterMapChange([] { ItemLimits::Raise(255); });
+                    Deferred::EnqueueAfterMapChange([] { MissionScoutManager::Rescan(); });
+                    Deferred::EnqueueAfterMapChange([] { FusionGating::Setup(); });
+                    Deferred::EnqueueAfterMapChange([] { SkillBlocker::Setup(); });
+                    Deferred::EnqueueAfterMapChange([] { SkillBlocker::BuildCache(); });
                 }
             }
             });

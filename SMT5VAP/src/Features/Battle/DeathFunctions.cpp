@@ -48,7 +48,6 @@ static void TriggerGameOverNow() {
     if (!fn) { LOG("[Death] SetNextStep not found"); return; }
     uint8 params[64]{};
     params[0] = 29; // E_BTL_STEP_GAMEOVER
-    LOG("[Death] death-link: forcing defeat (E_BTL_STEP_GAMEOVER)");
     bm->ProcessEvent(fn, params);
     LOG("[Death] SetNextStep(GAMEOVER) called");
 }
