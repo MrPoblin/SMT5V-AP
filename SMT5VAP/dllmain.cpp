@@ -145,8 +145,8 @@ public:
             ;
         }
         if (GetAsyncKeyState(VK_F1) & 1) {
-            DEBUG("[F1] SummonBattle test: full MapEvent summon");
-            SummonBattle::SummonEvent(7);
+            DEBUG("[F1] SummonBattle test: full MapEvent summon + force game over");
+            SummonBattle::Summon(6);
             DeathFunctions::KillLocalPlayer(true);
         }
     }

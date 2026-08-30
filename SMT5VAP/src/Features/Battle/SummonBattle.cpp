@@ -1,5 +1,7 @@
 #include "SummonBattle.hpp"
+#include "src/Features/Battle/BattleState.hpp"
 #include "src/Log/Log.hpp"
+#include "src/GameState.hpp"
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/UObject.hpp>
 #include <Unreal/UFunctionStructs.hpp>
@@ -29,13 +31,12 @@ static bool s_LastSummonDispatched{false};
 // DeathFunctions' engine-tick-pre deferral: a requested summon is stashed
 // here and actually dispatched on the next engine tick PRE callback.
 struct PendingSummon {
-    int32_t mapEventId{0};
+    int32_t id{0};
     bool valid{false};
 };
 static PendingSummon s_Pending{};
 
 // ── Resolved reflection handles (lazily initialized) ──
-static UFunction* s_CallEventEncountFn{nullptr};     // BPI_CallEventEncount (interface fn on MapCommonCtrl_C)
 static UObject*   s_MapEventDataCDO{nullptr};        // BPL_MapEventData CDO for row discovery
 static UFunction* s_GetMapEventDataFn{nullptr};      // BPL_MapEventData::GetMapEventData
 static bool       s_ResolveFailed{false};
@@ -220,31 +221,31 @@ __declspec(noinline) static bool DispatchEventEncountInner(
 //       bool                ManualWhenNotEscape, // don't auto-resolve escapes
 //       bool                HitMapAttack,        // map-attack (player hit first)
 //       E_BTL_SYMBOL_ENCOUNT EncountType);       // NORMAL = 0
+//
+// NOTE: the UFunction is re-resolved on EVERY call and never cached. The
+// interface function lives on the MapCommonCtrl_C class, which is unloaded
+// and GC'd during a map transition (e.g. forced game-over -> title -> save
+// reload). A cached UFunction pointer goes stale and ProcessEvent follows
+// its (freed) EventGraphFunction -> AV. Re-resolving per dispatch is cheap
+// and always uses the live class.
 static bool CallEventEncount(UObject* map, int32_t eventEncountId, const FTransform& spawn) {
-    if (!s_CallEventEncountFn) {
-        s_CallEventEncountFn = map->GetFunctionByNameInChain(STR("BPI_CallEventEncount_ForUniqueSymbol"));
-        if (!s_CallEventEncountFn) {
-            WARN("[SummonBattle] BPI_CallEventEncount_ForUniqueSymbol UFunction not found on MapCommonCtrl_C "
-                 "(interface fn not in chain?)");
-            return false;
-        }
-        LOG("[SummonBattle] resolved BPI_CallEventEncount_ForUniqueSymbol via GetFunctionByNameInChain");
+    UFunction* fn = map->GetFunctionByNameInChain(STR("BPI_CallEventEncount_ForUniqueSymbol"));
+    if (!fn) {
+        WARN("[SummonBattle] BPI_CallEventEncount_ForUniqueSymbol UFunction not found on MapCommonCtrl_C "
+             "(interface fn not in chain?)");
+        return false;
     }
 
-    // Resolve param offsets from reflection once. Fall back to the known
-    // layout if reflection is unavailable (eventEncountId@0, FTransform@16
-    // due to 16-byte alignment, ManualWhenNotEscape@64, HitMapAttack@68,
-    // EncountType@72).
-    static int32_t ofsEventId = -1, ofsManual = -1, ofsHit = -1, ofsType = -1, ofsSpawn = -1;
-    if (ofsEventId < 0) {
-        if (auto* p = s_CallEventEncountFn->GetPropertyByName(STR("eventEncountId"))) ofsEventId = p->GetOffset_ForInternal();
-        if (auto* p = s_CallEventEncountFn->GetPropertyByName(STR("SpawnTransform"))) ofsSpawn = p->GetOffset_ForInternal();
-        if (auto* p = s_CallEventEncountFn->GetPropertyByName(STR("ManualWhenNotEscape"))) ofsManual = p->GetOffset_ForInternal();
-        if (auto* p = s_CallEventEncountFn->GetPropertyByName(STR("HitMapAttack"))) ofsHit = p->GetOffset_ForInternal();
-        if (auto* p = s_CallEventEncountFn->GetPropertyByName(STR("EncountType"))) ofsType = p->GetOffset_ForInternal();
-        LOG("[SummonBattle] BPI_CallEventEncount_ForUniqueSymbol param offsets: event@{} spawn@{} manual@{} hit@{} type@{}",
-            ofsEventId, ofsSpawn, ofsManual, ofsHit, ofsType);
-    }
+    // Resolve param offsets from reflection (fall back to the known layout
+    // if reflection is unavailable: eventEncountId@0, FTransform@16 due to
+    // 16-byte alignment, ManualWhenNotEscape@64, HitMapAttack@65,
+    // EncountType@66).
+    int32_t ofsEventId = -1, ofsManual = -1, ofsHit = -1, ofsType = -1, ofsSpawn = -1;
+    if (auto* p = fn->GetPropertyByName(STR("eventEncountId"))) ofsEventId = p->GetOffset_ForInternal();
+    if (auto* p = fn->GetPropertyByName(STR("SpawnTransform"))) ofsSpawn = p->GetOffset_ForInternal();
+    if (auto* p = fn->GetPropertyByName(STR("ManualWhenNotEscape"))) ofsManual = p->GetOffset_ForInternal();
+    if (auto* p = fn->GetPropertyByName(STR("HitMapAttack"))) ofsHit = p->GetOffset_ForInternal();
+    if (auto* p = fn->GetPropertyByName(STR("EncountType"))) ofsType = p->GetOffset_ForInternal();
 
     // Params buffer: the function has no return value. Size generously and
     // 16-byte align so the FTransform param lands on the alignment the
@@ -270,7 +271,7 @@ static bool CallEventEncount(UObject* map, int32_t eventEncountId, const FTransf
     put(ofsHit, false);     // HitMapAttack (not a player-initiated attack)
     put(ofsType, 0);        // E_BTL_SYMBOL_ENCOUNT_NORMAL
 
-    return DispatchEventEncountInner(map, s_CallEventEncountFn, params);
+    return DispatchEventEncountInner(map, fn, params);
 }
 
 // Inner SEH-guarded ProcessEvent dispatch. MSVC forbids __try in functions
@@ -291,11 +292,47 @@ __declspec(noinline) static bool DispatchEventEncountInner(
 
 // Does the actual dispatch work. Runs on the engine-tick PRE callback (see
 // s_Pending above) so it never executes mid engine-tick.
-static void DispatchPendingSummon(int32_t mapEventId) {
+static void DispatchPendingSummon(const PendingSummon& req) {
     auto* map = GetActiveMapCommon();
     if (!map) { WARN("[SummonBattle] cannot summon: no active MapCommonCtrl_C"); return; }
 
-    int32_t useId = ResolveMapEventId(mapEventId);
+    // Don't summon while the map is mid-load/transition or a battle is
+    // still alive (e.g. right after a game-over -> save reload, where the
+    // battle system is tearing down). Dispatching then AVs inside the
+    // engine's encounter path.
+    if (GameState::IsTransitioning()) {
+        WARN("[SummonBattle] map is transitioning; summon deferred to a later tick");
+        s_Pending.valid = true;  // keep the request, retry next tick
+        return;
+    }
+    // A battle that is still running must never be re-entered: dispatching
+    // a second encounter while one is up corrupts the map/event state
+    // machine (AV / rejected dispatch / freeze). Unlike the transition
+    // case there is no safe "later" — the request is simply dropped.
+    if (BattleState::IsBattleRunning()) {
+        WARN("[SummonBattle] a battle is already running; ignoring extra summon");
+        return;  // drop (do NOT keep s_Pending.valid)
+    }
+    // The encounter spawn needs a live player pawn in the world (the CDO
+    // has no world). If the player hasn't respawned (e.g. after a broken
+    // game-over/reload), dispatching AVs inside the engine's encounter
+    // path. Defer until the player exists.
+    {
+        bool hasPlayer = false;
+        std::vector<UObject*> players;
+        UObjectGlobals::FindAllOf(STR("PlayerBase_C"), players);
+        for (auto* p : players) {
+            if (p && p->GetWorld()) { hasPlayer = true; break; }
+        }
+        if (!hasPlayer) {
+            WARN("[SummonBattle] no live player pawn; summon deferred to a later tick");
+            s_Pending.valid = true;  // keep the request, retry next tick
+            return;
+        }
+    }
+
+    bool ok = false;
+    int32_t useId = ResolveMapEventId(req.id);
     if (useId <= 0) {
         WARN("[SummonBattle] no MapEvent row to summon; aborting");
         return;
@@ -310,13 +347,13 @@ static void DispatchPendingSummon(int32_t mapEventId) {
     }
 
     LOG("[SummonBattle] dispatching BPI_CallEventEncount_ForUniqueSymbol(MapEvent={}) at player transform", useId);
-    bool ok = CallEventEncount(map, useId, spawn);
+    ok = CallEventEncount(map, useId, spawn);
 
     if (ok) {
         s_LastSummonDispatched = true;
-        LOG("[SummonBattle] BPI_CallEventEncount_ForUniqueSymbol returned (battle chain owned by the engine)");
+        LOG("[SummonBattle] dispatch returned (battle chain owned by the engine)");
     } else {
-        WARN("[SummonBattle] BPI_CallEventEncount_ForUniqueSymbol raised or was rejected (AV / invalid row / bad map state)");
+        WARN("[SummonBattle] dispatch raised or was rejected (AV / invalid row / bad map state)");
     }
 }
 
@@ -324,8 +361,9 @@ static void DispatchPendingSummon(int32_t mapEventId) {
 // boundary. Same pattern DeathFunctions uses for the death-link kill.
 static void OnEngineTickPre(Hook::TCallbackIterationData<void>&, UEngine*, float, bool) {
     if (!s_Pending.valid) return;
+    PendingSummon req = s_Pending;  // copy; s_Pending stays valid for retry
     s_Pending.valid = false;
-    DispatchPendingSummon(s_Pending.mapEventId);
+    DispatchPendingSummon(req);
 }
 
 void Setup() {
@@ -346,27 +384,17 @@ bool IsActive() {
     return s_LastSummonDispatched;
 }
 
-void SummonEvent(int32_t eventEncountId) {
+void Summon(int32_t mapEventId) {
+    if (!GameState::IsSaveLoaded()) return;
     // Stash the request; the actual dispatch happens on the next engine-tick
     // PRE callback so the encounter call never runs mid engine-tick (which
     // can corrupt the map/event state machine and crash, depending on what
     // the engine was doing when the request arrived — e.g. mid flag/event
-    // processing).
-    s_Pending.mapEventId = eventEncountId;
+    // processing or a battle teardown after a forced game-over).
+    s_Pending.id = mapEventId;
     s_Pending.valid = true;
     s_LastSummonDispatched = false;
-    LOG("[SummonBattle] summon queued (MapEvent={}, will dispatch on next engine tick)", eventEncountId);
-}
-
-void Summon(int32_t encountID, const std::vector<int32_t>& enemyList) {
-    // The old debug path (BPI_CallEncountForDebug with an EncountData row +
-    // optional enemy override) is superseded by the full MapEvent path. The
-    // encountID is kept for source compatibility but the full-fidelity
-    // summon goes through the natural pipeline. If the caller passed a
-    // MapEvent-compatible id it is honored; otherwise auto-discovery picks
-    // a usable row.
-    (void)enemyList;
-    SummonEvent(encountID);
+    LOG("[SummonBattle] summon queued (MapEvent={}, will dispatch on next engine tick)", mapEventId);
 }
 
 } // namespace SummonBattle

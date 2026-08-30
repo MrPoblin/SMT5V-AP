@@ -272,22 +272,26 @@ void RenderDebugTab(CppUserModBase* instance)
     }
 
     ImGui::Separator();
-    ImGui::Text("Summon Battle (full MapEvent pipeline — spawn only, does not touch the resulting fight)");
+    ImGui::Text("Summon Battle (MapEventData row — full scripted-encounter pipeline)");
     ImGui::InputInt("MapEvent ID (0 = auto-discover)##summon", &s_summonEncID);
     if (ImGui::Button("Summon")) {
         // Full-fidelity summon through the natural MapEvent path. An ID of 0
         // makes the module auto-discover a usable MapEvent row for the
         // current map; a non-zero ID is used as the explicit row.
-        SummonBattle::SummonEvent(s_summonEncID);
+        SummonBattle::Summon(s_summonEncID);
     }
     ImGui::SameLine();
     if (ImGui::Button("Summon + force game over")) {
-        SummonBattle::SummonEvent(s_summonEncID);
+        SummonBattle::Summon(s_summonEncID);
         DeathFunctions::KillLocalPlayer();
     }
     if (SummonBattle::IsActive()) {
         ImGui::TextColored(ImVec4(0.5f, 1, 0.5f, 1), "Last summon dispatched (engine owns the battle now)");
     }
+
+    ImGui::Separator();
+    ImGui::Text(" ");
+    ImGui::Text(" ");
 
     ImGui::EndChild();
 

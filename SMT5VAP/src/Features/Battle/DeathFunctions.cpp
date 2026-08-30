@@ -1,4 +1,5 @@
 #include "DeathFunctions.hpp"
+#include "src/Features/Battle/BattleState.hpp"
 #include "src/Log/Log.hpp"
 #include "src/GameState.hpp"
 #include <Unreal/UObjectGlobals.hpp>
@@ -19,6 +20,12 @@ namespace DeathFunctions {
 // engine-tick (which would corrupt the battle state machine).
 static bool s_PendingKill{false};
 static bool s_RetryUntilSuccess{false};
+static int32_t s_Attempts{0};
+
+// If the kill can't land within this many ticks (e.g. the summon it was
+// chained to failed and no battle ever came up), give up instead of
+// polling forever.
+static constexpr int32_t kMaxKillAttempts = 20;
 
 static auto s_LastPollTime = std::chrono::steady_clock::now();
 static constexpr auto POLL_INTERVAL = std::chrono::seconds(1);
@@ -33,30 +40,24 @@ static UObject* GetActivePartyComponent() {
     return nullptr;
 }
 
-static UObject* GetBattleMainActor() {
-    std::vector<UObject*> mains;
-    UObjectGlobals::FindAllOf(STR("BattleMainWorkBase"), mains);
-    for (auto* m : mains) {
-        if (m && m->GetWorld()) return m;
-    }
-    return nullptr;
-}
+// m_Step @0x260 on ABattleMainWorkBase; m_GameOverWidget @0xE18 on
+// ABattleMain_C.
+static constexpr int32_t kStepOffset = 0x260;
+static constexpr int32_t kGameOverWidgetOffset = 0xE18;
 
 static bool GameOverActuallyStarted() {
-    auto* bm = GetBattleMainActor();
+    auto* bm = BattleState::GetBattleMain();
     if (!bm) return false;
-    // m_Step at 0x260 on ABattleMainWorkBase
-    uint8 step = *reinterpret_cast<uint8*>(reinterpret_cast<uint8*>(bm) + 0x260);
+    uint8 step = *reinterpret_cast<uint8_t*>(reinterpret_cast<uint8_t*>(bm) + kStepOffset);
     if (step == 29) return true; // E_BTL_STEP_GAMEOVER
-    // m_GameOverWidget at 0xE18 on ABattleMain_C
-    void* widget = *reinterpret_cast<void**>(reinterpret_cast<uint8*>(bm) + 0xE18);
+    void* widget = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(bm) + kGameOverWidgetOffset);
     return widget != nullptr;
 }
 
 static void TriggerGameOverNow() {
     auto* comp = GetActivePartyComponent();
     if (!comp) { LOG("[Death] no active party component"); return; }
-    auto* bm = GetBattleMainActor();
+    auto* bm = BattleState::GetBattleMain();
     if (!bm) { LOG("[Death] no battle main"); return; }
 
     // Transition the battle into the game-over step. E_BTL_STEP_GAMEOVER = 29.
@@ -74,17 +75,34 @@ static void OnEngineTickPre(Hook::TCallbackIterationData<void>&, UEngine*, float
     if (now - s_LastPollTime < POLL_INTERVAL) return;
     s_LastPollTime = now;
 
-    if (s_PendingKill) {
-        if (!s_RetryUntilSuccess) {
-            s_PendingKill = false;
-        }
-        else if (GameOverActuallyStarted() || GameState::MapName().contains(L"Title/LV_Title")) {
-            s_PendingKill = false;
-            s_RetryUntilSuccess = false;
-            return;
-        }
+    if (!s_PendingKill) return;
+
+    // A single-shot kill: fire once, then clear regardless of outcome.
+    if (!s_RetryUntilSuccess) {
+        s_PendingKill = false;
         TriggerGameOverNow();
+        return;
     }
+
+    // Retry mode: keep forcing the game-over until it actually starts.
+    if (++s_Attempts > kMaxKillAttempts) {
+        WARN("[Death] kill did not land within {} attempts; giving up", kMaxKillAttempts);
+        s_PendingKill = false;
+        s_RetryUntilSuccess = false;
+        s_Attempts = 0;
+        return;
+    }
+
+    // The game-over transition is in progress (or we're on the title
+    // after a death), so the kill already took effect — stop.
+    if (GameOverActuallyStarted() || GameState::MapName().contains(L"Title/LV_Title")) {
+        s_PendingKill = false;
+        s_RetryUntilSuccess = false;
+        s_Attempts = 0;
+        return;
+    }
+
+    TriggerGameOverNow();
 }
 
 void Setup() {
@@ -97,6 +115,7 @@ void Setup() {
 bool KillLocalPlayer(bool retry) {    
     s_PendingKill = true;
     s_RetryUntilSuccess = retry;
+    s_Attempts = 0;
     LOG("[Death] game-over requested");
     return true;
 }
